@@ -1,36 +1,45 @@
 # Uzima backend on Google Cloud
 
-The dashboard stays at `https://project-uzima.vercel.app/`. The Python backend runs in the dedicated `uzima-hackathon-20260926` project, in Cloud Run `us-central1`, administered through `hello@oriva.health`.
+The dashboard runs on Vercel at `https://uzima-health.vercel.app/`. The Python backend runs on Cloud Run in `us-central1`, in a dedicated project, set up to cost close to nothing.
 
 ## Runtime
 
 `runtime.py` supervises the existing five internal services and the public gateway in one container. Internal ports bind to loopback; only the public gateway listens on Cloud Run's assigned port. Startup waits for every internal health check. A failed child ends the container so Cloud Run can restart it.
 
-The demo uses one instance, always-allocated CPU, and a maximum of one instance because transfer, call and ticket state currently lives in memory. Cloud Run can still replace an instance; restarts or deployments lose that state. This is a hackathon configuration, not durable clinical storage. Keeping an instance running incurs hosting charges.
+Transfer, call and ticket state lives in memory, so the service runs at most one instance. It scales to zero when idle: the first visit after a quiet period starts it in a few seconds, and a restart clears earlier transfers and tickets. This is a demo configuration, not durable clinical storage.
 
-AWS Bedrock remains the AI provider. Twilio remains the phone provider. Provider credentials and configured demo numbers are in the `uzima-runtime` Secret Manager secret, with secret access granted to the dedicated runtime service account. Temporary AWS workshop credentials must be renewed when they expire. Cloud Run environment settings override values from the secret.
+## Cost settings
+
+- Minimum 0 and maximum 1 instance, 1 vCPU, 1 GiB, startup CPU boost.
+- CPU billed only while requests are handled (`--cpu-throttling`). Simulated hospital answers still arrive on time because the dashboard polls every second.
+- Simulated by default: `TWILIO_ENABLED=0`, `USE_BEDROCK=0`, `USE_AWS=0`, so no provider is called.
+- Artifact Registry keeps the two newest images; older ones expire after seven days.
+- A monthly budget alert on the project emails at 50% and 100% of $5.
 
 ## Build and deploy
 
-Build a source directory containing only tracked `services/`, `data/`, `requirements.txt` and `infra/gcp/`. Do not upload `.env`, `.logs`, credential files or the local virtual environment.
+Build from a directory containing only tracked `services/`, `data/`, `requirements.txt` and `infra/gcp/`. Never upload `.env`, `.logs`, credential files or the local virtual environment.
 
-Build the container with `cloudbuild.yaml`, setting `_IMAGE` to an Artifact Registry image in this project's `uzima` repository. Use the dedicated `uzima-builder` service account. Deploy `uzima-backend` with:
+```sh
+gcloud builds submit <source-dir> --region us-central1 --config infra/gcp/cloudbuild.yaml \
+  --substitutions _IMAGE=us-central1-docker.pkg.dev/<project>/uzima/backend:<tag>
+gcloud run deploy uzima-backend --region us-central1 --image <image> \
+  --service-account uzima-runtime@<project>.iam.gserviceaccount.com --allow-unauthenticated \
+  --min-instances 0 --max-instances 1 --cpu 1 --memory 1Gi --cpu-throttling --cpu-boost \
+  --concurrency 80 --timeout 3600 \
+  --set-env-vars TWILIO_ENABLED=0,USE_BEDROCK=0,USE_AWS=0,SIM_TIME_SCALE=1,VISITOR_CALLS=1,DOCTOR_CALLS=simulated,PUBLIC_HOST=<run-host>,HANDOFF_PUBLIC_URL=https://<run-host>,SHL_VIEWER_URL=https://<run-host>/view
+```
 
-- Image from Artifact Registry.
-- Runtime service account `uzima-runtime@uzima-hackathon-20260926.iam.gserviceaccount.com`.
-- Secret environment mapping `UZIMA_RUNTIME_JSON=uzima-runtime:1` (update the pinned version when renewing credentials).
-- One vCPU, 1 GiB RAM, min/max instances 1, CPU throttling disabled, concurrency 80 and timeout 3600 seconds.
-- Public invocation enabled: the gateway exposes only the dashboard API, signed phone callbacks and bearer ticket links.
-- `PUBLIC_HOST` set to the Cloud Run hostname; `HANDOFF_PUBLIC_URL` set to its HTTPS origin and `SHL_VIEWER_URL` to its `/view` route.
+The runtime service account has no roles. Public invocation is enabled because the gateway exposes only the dashboard API, signed phone callbacks and bearer ticket links.
 
-Initially deploy with `TWILIO_ENABLED=0` to verify a complete simulated transfer without dialing. After verification, set `TWILIO_ENABLED=1` for the user-authorized live demo. No real phone rehearsal is part of the deployment check.
+## Optional live call
 
-Set Vercel's `UZIMA_BACKEND_URL` to the Cloud Run origin and publish production with the existing dashboard build settings. The submitted Vercel domain remains unchanged.
+With `VISITOR_CALLS=1`, a visitor can enter their own US number so the first hospital call rings their phone; all other hospitals stay simulated, and `DOCTOR_CALLS=simulated` shows the two doctor calls on the dashboard instead of dialing. It switches on only when Twilio credentials are present. Store them in Secret Manager (mapped to `UZIMA_RUNTIME_JSON`), grant the runtime account access to that secret, and set `TWILIO_ENABLED=1`. A Twilio trial reaches only verified numbers. `VISITOR_CALLS_PER_DAY` and `VISITOR_CALLS_PER_NUMBER` cap the phone bill.
 
 ## Checks
 
 - `make test` and the Node relay tests.
 - Cloud Run `/dashboard/health` and `/dashboard/centers`.
-- Simulated search → results → accept → ticket while Twilio is disabled.
+- Simulated search → results → Connect → simulated doctor call → ticket.
 - Public ticket and encrypted record manifest are reachable.
-- The same dashboard health and transfer routes work through the submitted Vercel URL.
+- The same routes work through the Vercel URL.

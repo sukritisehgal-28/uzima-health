@@ -8,7 +8,6 @@ node_modules/
 .logs/
 .pytest_cache/
 dist/
-.claude/
 *.tsbuildinfo
 
 .vercel/

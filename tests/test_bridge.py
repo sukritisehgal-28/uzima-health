@@ -313,3 +313,78 @@ def test_connect_rejected_update_without_fallback_does_not_redial(monkeypatch):
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(gateway.bridge(gateway.BridgeRequest(transfer_id="T1", agent_id="A1", clinician="+15550101")))
     assert send.await_count == 1
+
+
+def test_simulated_doctor_calls_thank_and_end_the_held_hospital_calls(monkeypatch):
+    from services.sync_twilio.app import gather
+    monkeypatch.setattr(gateway.config, "has_twilio", lambda: True)
+    monkeypatch.setenv("DOCTOR_CALLS", "simulated")
+    monkeypatch.setattr(gateway, "live_calls", {("T1", "A1"): {"call_sid": "winning-call"}, ("T1", "A2"): {"call_sid": "other-yes"},
+                                                ("T1", "A3"): {"call_sid": "said-no"}, ("T2", "A1"): {"call_sid": "other-transfer"}})
+    monkeypatch.setattr(gather, "sessions", {
+        "a": {"tid": "T1", "header": H, "stage": "hold"},
+        "b": {"tid": "T1", "header": H.model_copy(update={"agent_id": "A2"}), "stage": "hold"},
+        "c": {"tid": "T1", "header": H.model_copy(update={"agent_id": "A3"}), "stage": "done"}})
+    send = AsyncMock(return_value={"sid": "x"})
+    monkeypatch.setattr(gateway, "_twilio", send)
+    req = gateway.BridgeRequest(transfer_id="T1", agent_id="A1", summary="Summary", clinician="+15550101",
+                                accepting_doctor="+15550102", fallback_hospital="+15550102")
+    assert asyncio.run(gateway.bridge(req)) == {"mode": "mock", "kind": "bridge"}
+    said = {path: gateway.twiml_docs[data["Url"].rsplit("/", 1)[-1]] for (path, data), _ in send.call_args_list}
+    assert set(said) == {"Calls/winning-call.json", "Calls/other-yes.json"}   # no doctor or finished call is dialed
+    assert "selected for this transfer" in said["Calls/winning-call.json"] and "Another hospital" in said["Calls/other-yes.json"]
+    assert all(t.endswith("<Hangup/></Response>") for t in said.values())
+    assert gather.sessions["a"]["stage"] == gather.sessions["b"]["stage"] == "done"   # in-flight hold redirects hang up
+
+
+def test_telnyx_callbacks_must_carry_a_fresh_valid_signature(monkeypatch):
+    import base64, time
+    from types import SimpleNamespace
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    from fastapi import HTTPException
+    from services.sync_twilio.app import gather
+    key = Ed25519PrivateKey.generate()
+    monkeypatch.setenv("PHONE_PROVIDER", "telnyx")
+    monkeypatch.setenv("TELNYX_PUBLIC_KEY", base64.b64encode(key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode())
+    def request(stamp, body, signed=None):
+        sig = base64.b64encode(key.sign(f"{stamp}|".encode() + (signed or body))).decode()
+        return SimpleNamespace(headers={"telnyx-timestamp": str(stamp), "telnyx-signature-ed25519": sig})
+    now, body = int(time.time()), b"CallSid=v3%3Aabc&SpeechResult=yes"
+    gather.validate_signature(request(now, body), {}, body)                     # valid
+    for bad in (request(now, body, signed=b"SpeechResult=no"), request(now - 600, body)):
+        with pytest.raises(HTTPException):
+            gather.validate_signature(bad, {}, body)                         # tampered, stale
+
+
+def test_telnyx_calls_use_the_texml_api(monkeypatch):
+    for k, v in {"PHONE_PROVIDER": "telnyx", "TELNYX_ACCOUNT_SID": "acct-uuid", "TELNYX_APP_ID": "app-1",
+                 "TELNYX_API_KEY": "KEY", "TELNYX_PUBLIC_KEY": "pk", "TELNYX_FROM_NUMBER": "+16625550100"}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("TWILIO_ENABLED", "1")
+    seen = []
+    def handler(request):
+        seen.append((str(request.url), request.headers["authorization"], json.loads(request.content)))
+        return httpx.Response(200, json={"status": "queued", "call_sid": "v3:abc"})
+    real = httpx.AsyncClient
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    assert gateway.config.has_twilio() and gateway.config.from_number() == "+16625550100"
+    r = asyncio.run(gateway._twilio("Calls.json", {"To": "+16625550123", "From": "+16625550100", "Url": "https://h/twiml/x",
+                                                   "Timeout": "30", "TimeLimit": "420", "StatusCallbackEvent": ["initiated", "completed"]}))
+    assert r["sid"] == "v3:abc"
+    url, auth, body = seen[-1]
+    assert url == "https://api.telnyx.com/v2/texml/Accounts/acct-uuid/Calls" and auth == "Bearer KEY"
+    assert body == {"To": "+16625550123", "From": "+16625550100", "Url": "https://h/twiml/x", "Timeout": 30, "TimeLimit": 420,
+                    "StatusCallbackEvent": "initiated completed", "ApplicationSid": "app-1"}
+    asyncio.run(gateway._twilio("Calls/v3:abc.json", {"Url": "https://h/twiml/y"}))
+    assert seen[-1][0] == "https://api.telnyx.com/v2/texml/Accounts/acct-uuid/Calls/v3:abc" and seen[-1][2] == {"Url": "https://h/twiml/y"}
+    with pytest.raises(Exception):
+        asyncio.run(gateway._twilio("Messages.json", {"To": "+1", "Body": "x"}))   # no texts, by design
+
+
+def test_callbacks_may_arrive_as_json():
+    from types import SimpleNamespace
+    from services.sync_twilio.app.gather import callback_params
+    req = SimpleNamespace(headers={"content-type": "application/json"})
+    assert callback_params(req, b'{"CallSid": "v3:abc", "SpeechResult": "yes", "Digits": null}') == {"CallSid": ["v3:abc"], "SpeechResult": ["yes"]}
+    assert callback_params(SimpleNamespace(headers={}), b"Digits=1")["Digits"] == ["1"]

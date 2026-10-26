@@ -12,7 +12,7 @@ export default async function handler(request, response) {
   try {
     const result = await fetch(`${origin.replace(/\/$/, "")}/dashboard/${path}`, {
       method: request.method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...demoPhone(request, path) },
       body: request.method === "POST" ? JSON.stringify(request.body) : undefined,
       signal: AbortSignal.timeout(50000),
       redirect: "error",
@@ -23,4 +23,10 @@ export default async function handler(request, response) {
   } catch {
     return response.status(503).json({ detail: "The demo backend is offline. Please try again shortly." });
   }
+}
+
+// A visitor's own number for the first hospital call travels only with a new search.
+function demoPhone(request, path) {
+  const phone = path === "transfers" ? request.headers?.["x-uzima-demo-phone"] : undefined;
+  return typeof phone === "string" && phone ? { "X-Uzima-Demo-Phone": phone.slice(0, 32) } : {};
 }

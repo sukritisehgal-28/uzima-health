@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from services.shared.clients import client
 
 router = APIRouter(prefix="/dashboard")
+DEMO_PHONE = "x-uzima-demo-phone"
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST"])
@@ -18,10 +19,12 @@ async def dashboard(path: str, request: Request):
     body = await request.body()
     if len(body) > 65536:
         raise HTTPException(413, "Request too large.")
+    headers = {"content-type": "application/json"}
+    if path == "transfers" and request.headers.get(DEMO_PHONE):
+        headers[DEMO_PHONE] = request.headers[DEMO_PHONE][:32]   # a visitor's own number for the first hospital call
     try:
         async with client("orchestrator", timeout=45) as c:
-            result = await c.request(request.method, "/" + path, content=body,
-                                     headers={"content-type": "application/json"})
+            result = await c.request(request.method, "/" + path, content=body, headers=headers)
     except httpx.HTTPError:
         raise HTTPException(503, "The demo backend is offline. Keep the host laptop and tunnel running.")
     return Response(result.content, status_code=result.status_code,

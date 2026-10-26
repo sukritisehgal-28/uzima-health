@@ -73,11 +73,34 @@ class BridgeRequest(BaseModel):
 
 
 async def _twilio(path: str, data: dict) -> dict:
+    if config.phone_provider() == "telnyx":
+        return await _telnyx(path, data)
     sid = config.env("TWILIO_ACCOUNT_SID")
     async with httpx.AsyncClient(timeout=20, auth=(sid, config.env("TWILIO_AUTH_TOKEN"))) as c:
         r = await c.post(f"https://api.twilio.com/2010-04-01/Accounts/{sid}/{path}", data=data)
         r.raise_for_status()
         return r.json()
+
+
+async def _telnyx(path: str, data: dict) -> dict:
+    """The same call requests through Telnyx's TwiML-compatible TeXML API (JSON body, bearer key).
+    Only calls are supported: Calls.json starts one, Calls/{sid}.json gives a live call new instructions."""
+    call = path == "Calls.json"
+    if not (call or (path.startswith("Calls/") and path.endswith(".json"))):
+        raise HTTPException(501, "Telnyx is used for calls only.")
+    body = {key: " ".join(value) if isinstance(value, list) else value for key, value in data.items()}
+    for key in ("Timeout", "TimeLimit"):
+        if key in body:
+            body[key] = int(body[key])
+    if call:
+        body["ApplicationSid"] = config.env("TELNYX_APP_ID")
+    url = f"https://api.telnyx.com/v2/texml/Accounts/{config.env('TELNYX_ACCOUNT_SID')}/{path.removesuffix('.json')}"
+    async with httpx.AsyncClient(timeout=20, headers={"Authorization": f"Bearer {config.env('TELNYX_API_KEY')}"}) as c:
+        r = await c.post(url, json=body)
+        r.raise_for_status()
+        result = r.json()
+    # The call id may come back here or only with the first call callback (see gather.respond).
+    return {**result, "sid": result.get("call_sid") or result.get("sid")}
 
 
 def _mock(kind: str, **payload) -> dict:
@@ -127,7 +150,7 @@ async def call(req: CallRequest):
         raise HTTPException(503, "Unknown VOICE_PROVIDER")
     # Pause once after pickup, before either provider starts its first greeting.
     twiml = twiml.replace("<Response>", '<Response><Pause length="1"/>', 1)
-    r = await _twilio("Calls.json", {"To": req.header["phone"], "From": config.env("TWILIO_FROM_NUMBER"), "Url": _twiml_url(twiml),
+    r = await _twilio("Calls.json", {"To": req.header["phone"], "From": config.from_number(), "Url": _twiml_url(twiml),
                                     "Timeout": "30", "TimeLimit": str(int(MAX_CALL_S) + 180)})
     live_calls[(req.transfer_id, agent_id)]["call_sid"] = r.get("sid")
     return {"mode": "live", "sid": r.get("sid")}
@@ -557,7 +580,7 @@ async def media(ws: WebSocket):
 async def sms(req: SmsRequest):
     if not config.has_twilio():
         return _mock("sms", to=req.to, text=req.text)
-    r = await _twilio("Messages.json", {"To": req.to, "From": config.env("TWILIO_FROM_NUMBER"), "Body": req.text})
+    r = await _twilio("Messages.json", {"To": req.to, "From": config.from_number(), "Body": req.text})
     return {"mode": "live", "sid": r.get("sid")}
 
 
@@ -565,6 +588,27 @@ async def sms(req: SmsRequest):
 async def release(req: ReleaseRequest):
     """Hospitals never get texts or links. The agent already thanked them on the call, so this only logs."""
     return _mock("release", hospital=req.hospital, phone=req.phone)
+
+
+CLOSING = ("Thank you. Your hospital has been selected for this transfer. The referring doctor is being connected "
+           "with your accepting doctor now, and the transfer ticket travels with the patient. Goodbye.")
+RELEASED = "Thank you. Another hospital was selected for this patient, so you can release the bed. Goodbye."
+
+
+async def close_held_calls(transfer_id: str, winner: str):
+    """Doctor calls simulated: thank every hospital desk still on hold after saying yes and end its call."""
+    for (tid, agent_id), entry in list(live_calls.items()):
+        if tid != transfer_id:
+            continue
+        held = gather.close(tid, agent_id)   # a hold redirect still in flight hangs up instead of looping
+        if not entry.get("call_sid") or not (held or agent_id == winner):
+            continue                         # declined calls have already said goodbye
+        words = CLOSING if agent_id == winner else RELEASED
+        try:
+            await _twilio(f"Calls/{entry['call_sid']}.json",
+                          {"Url": _twiml_url(f"<Response><Say>{escape(words)}</Say><Hangup/></Response>")})
+        except httpx.HTTPError as e:   # the call may already have ended
+            log.warning("Could not close a held hospital call: %s", type(e).__name__)
 
 
 @app.post("/bridge")
@@ -575,6 +619,10 @@ async def bridge(req: BridgeRequest):
     entry = live_calls.get((req.transfer_id, req.agent_id)) if req.transfer_id else None
     say = f"<Say>{escape(req.summary)}</Say>" if req.summary else ""
     if not config.has_twilio():
+        return _mock("bridge", live=bool(entry), clinician=req.clinician or req.a, summary=req.summary)
+    if config.env("DOCTOR_CALLS", "live") == "simulated":
+        # Public demo: the hospital call is real; the two doctor calls are shown on the dashboard only.
+        await close_held_calls(req.transfer_id, req.agent_id)
         return _mock("bridge", live=bool(entry), clinician=req.clinician or req.a, summary=req.summary)
     if req.accepting_doctor:
         return await doctor_handoff.start(req, entry)
@@ -590,7 +638,7 @@ async def bridge(req: BridgeRequest):
     to, other = (req.clinician or req.a), (req.fallback_hospital or req.b)
     # The receiving doctor hears the referral before the referring clinician joins.
     twiml = f"<Response>{say or '<Say>This is the Uzima AI assistant connecting the referring doctor.</Say>'}<Dial>{escape(to)}</Dial></Response>"
-    r = await _twilio("Calls.json", {"To": other, "From": config.env("TWILIO_FROM_NUMBER"), "Url": _twiml_url(twiml)})
+    r = await _twilio("Calls.json", {"To": other, "From": config.from_number(), "Url": _twiml_url(twiml)})
     return {"mode": "live", "sid": r.get("sid"), "via": "new_call"}
 
 

@@ -62,3 +62,42 @@ def test_childbirth_only_calls_verified_birthing_hospitals_with_a_nicu():
     # children's hospitals don't deliver; these adult hospitals don't deliver or have no NICU (checked, see each capability note)
     assert not ids & {"le_bonheur", "arkansas_childrens", "methodist_university", "baptist_memphis", "chi_st_vincent", "merit_central"}
     assert "NICU" in hs[0].capability_question
+
+
+def test_visitor_number_is_checked_and_limited(monkeypatch):
+    from services.orchestrator.app import main as orch
+    monkeypatch.setattr(orch, "VISITOR_CALLS", {})
+    monkeypatch.setenv("VISITOR_CALLS_PER_DAY", "3")
+    monkeypatch.setenv("VISITOR_CALLS_PER_NUMBER", "2")
+    for bad in ["", "12345", "+44 20 7946 0958", "(900) 555-0123", "+1 123 555 0123"]:
+        assert orch.visitor_phone(bad) == (None, "invalid")
+    assert orch.visitor_phone("(662) 555-0123") == ("+16625550123", None)
+    assert orch.visitor_phone("+1 662-555-0123") == ("+16625550123", None)
+    assert orch.visitor_phone("662.555.0123") == (None, "limit")       # two calls per number a day
+    assert orch.visitor_phone("601 555 0199") == ("+16015550199", None)
+    assert orch.visitor_phone("901 555 0100") == (None, "limit")       # daily total reached
+    assert "6625550123" not in str(orch.VISITOR_CALLS)                 # counted by hash only
+    monkeypatch.setattr(orch, "VISITOR_CALLS", {})
+    monkeypatch.setenv("VISITOR_CALLS_ALLOW", "+1 (662) 555-0123")     # e.g. only the trial's verified phone
+    assert orch.visitor_phone("601 555 0199") == (None, "unavailable")
+    assert orch.visitor_phone("662-555-0123") == ("+16625550123", None)
+
+
+def test_only_the_visitor_number_rings_and_it_stays_private(monkeypatch):
+    from services.orchestrator.app.main import public_header
+    monkeypatch.setenv("DEMO_HOSPITAL_PHONES", "+15550000001")
+    visitor = select_centers(Specialty.cardiac_icu, phones=["+16625550123"])
+    assert visitor[0].live and visitor[0].phone == "+16625550123" and not any(h.live for h in visitor[1:])
+    assert public_header(visitor[0])["phone"] == "[private]"
+    nobody = select_centers(Specialty.cardiac_icu, phones=[])
+    assert nobody and not any(h.live for h in nobody) and nobody[0].phone == "[simulated]"
+    assert select_centers(Specialty.cardiac_icu)[0].phone == "+15550000001"   # default: configured demo phones
+
+
+def test_simulated_doctor_call_steps_through_the_handoff(monkeypatch):
+    from services.orchestrator.app.main import simulated_handoff
+    monkeypatch.setenv("SIM_TIME_SCALE", "1")
+    assert [simulated_handoff(s) for s in (0, 6, 10, 30)] == [
+        "calling_accepting_doctor", "calling_sending_doctor", "connected", "ended"]
+    monkeypatch.setenv("SIM_TIME_SCALE", "0")
+    assert simulated_handoff(0) == "ended"

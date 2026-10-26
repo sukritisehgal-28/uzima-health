@@ -2,14 +2,13 @@
 import asyncio
 from datetime import datetime, timezone
 from html import escape
-from urllib.parse import parse_qs
 from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from services.shared import config
-from services.sync_twilio.app.gather import validate_signature
+from services.sync_twilio.app.gather import callback_params, validate_signature
 
 router = APIRouter()
 handoffs: dict[str, dict] = {}
@@ -57,8 +56,9 @@ def handoff_status(transfer_id: str):
 
 @router.post("/handoff-status/{token}/{kind}")
 async def status_callback(token: str, kind: str, request: Request):
-    params = parse_qs((await request.body()).decode(), keep_blank_values=True)
-    validate_signature(request, params)
+    body = await request.body()
+    params = callback_params(request, body)
+    validate_signature(request, params, body)
     state = handoffs.get(token)
     if not state or kind not in {"conference", "accepting", "sending"}:
         raise HTTPException(404)
@@ -107,7 +107,7 @@ async def start(req, hospital_entry: dict | None) -> dict:
     twiml = (f'<Response><Say>Hello, this is the Uzima AI assistant. {escape(req.summary or "I am calling about a demo referral.")}</Say>'
              f'<Redirect method="POST">{escape(ready_url)}</Redirect></Response>')
     try:
-        result = await _twilio("Calls.json", {"To": req.accepting_doctor, "From": config.env("TWILIO_FROM_NUMBER"),
+        result = await _twilio("Calls.json", {"To": req.accepting_doctor, "From": config.from_number(),
                                             "Url": _twiml_url(twiml), "Timeout": "30", "TimeLimit": "300",
                                             **call_callbacks(token, "accepting")})
     except httpx.HTTPError:
@@ -120,8 +120,9 @@ async def start(req, hospital_entry: dict | None) -> dict:
 @router.post("/doctor-ready/{token}")
 async def ready(token: str, request: Request):
     from services.sync_twilio.app.main import _twilio, _twiml_url
-    params = parse_qs((await request.body()).decode(), keep_blank_values=True)
-    validate_signature(request, params)
+    body = await request.body()
+    params = callback_params(request, body)
+    validate_signature(request, params, body)
     state = handoffs.get(token)
     if not state:
         raise HTTPException(404)
@@ -133,7 +134,7 @@ async def ready(token: str, request: Request):
         req = state["req"]
         try:
             sending = await _twilio("Calls.json", {"To": req.clinician or req.a,
-                "From": config.env("TWILIO_FROM_NUMBER"), "Timeout": "30", "TimeLimit": "300",
+                "From": config.from_number(), "Timeout": "30", "TimeLimit": "300",
                 **call_callbacks(token, "sending"),
                 "Url": _twiml_url('<Response><Say>The accepting doctor is joining your referral handoff.</Say>'
                                   + conference(state["room"], token, "sending") + '</Response>')})

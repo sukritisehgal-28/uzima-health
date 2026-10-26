@@ -36,3 +36,21 @@ def test_hosted_api_returns_clear_failure_when_backend_is_offline(monkeypatch):
     monkeypatch.setattr(dashboard, "client", offline)
     response = TestClient(app).get("/dashboard/health")
     assert response.status_code == 503 and "offline" in response.text
+
+
+def test_hosted_api_passes_the_visitor_number_only_with_a_new_search():
+    origin = FastAPI()
+    seen = []
+    @origin.api_route("/{path:path}", methods=["GET", "POST"])
+    async def receive(path: str, request: Request):
+        seen.append((path, request.headers.get("x-uzima-demo-phone")))
+        return {"ok": True}
+    clients.register_asgi("orchestrator", origin)
+    tc = TestClient(app)
+    try:
+        tc.post("/dashboard/transfers", json={}, headers={"X-Uzima-Demo-Phone": "k"})
+        tc.post("/dashboard/transfers/abcdef1234/accept", json={}, headers={"X-Uzima-Demo-Phone": "k"})
+        tc.post("/dashboard/transfers", json={})
+        assert seen == [("transfers", "k"), ("transfers/abcdef1234/accept", None), ("transfers", None)]
+    finally:
+        clients.clear()

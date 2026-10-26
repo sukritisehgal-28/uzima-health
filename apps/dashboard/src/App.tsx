@@ -46,6 +46,10 @@ export default function App() {
   const [windowMin, setWindowMin] = useState<number>();
   const [error, setError] = useState<string>();
   const [liveCalls, setLiveCalls] = useState(false);   // real phone calls only when the Twilio gateway is live
+  const [visitorCalls, setVisitorCalls] = useState(false);   // public demo: a visitor can answer the first hospital call
+  const [phone, setPhone] = useState("");
+  const [callNote, setCallNote] = useState<string>();
+  const [doctorPopup, setDoctorPopup] = useState(true);
   const tidRef = useRef<string>();
 
   function restoreStatus(s: any) {
@@ -82,7 +86,7 @@ export default function App() {
       setNames(Object.fromEntries(d.centers.map((c: any) => [c.id, c.short_name ?? c.name])));
       setWindows(Object.fromEntries(Object.entries(d.demo_cases).map(([k, v]: [string, any]) => [k, d.windows[v.window]])));
     }).catch(() => setError("The demo backend is unavailable. Please try again shortly."));
-    getHealth().then((h) => setLiveCalls(h?.integrations?.twilio === "live")).catch(() => {});
+    getHealth().then((h) => { setLiveCalls(h?.integrations?.twilio === "live"); setVisitorCalls(!!h?.visitor_calls); }).catch(() => {});
   }, []);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, []);
 
@@ -123,8 +127,14 @@ export default function App() {
     if (starting) return;
     setStarting(true);
     setError(undefined); setBridgeMode(undefined); setBridgeStatus(undefined); setTwin(undefined); setRec(undefined); setStoppedAt(undefined);
+    setCallNote(undefined); setDoctorPopup(true);
     try {
-      const r = await startTransfer(specialty, windowMin);   // untouched slider = the case default window
+      const r = await startTransfer(specialty, windowMin, visitorCalls ? phone.trim() || undefined : undefined);   // untouched slider = the case default window
+      if (r.visitor_call_problem) setCallNote({
+        limit: "Today's demo calls are used up, so every hospital is simulated this time.",
+        unavailable: "Live demo calls are limited to approved numbers right now, so every hospital is simulated this time.",
+        invalid: "That doesn't look like a US phone number, so every hospital is simulated this time.",
+      }[r.visitor_call_problem]);
       tidRef.current = r.transfer_id; setTid(r.transfer_id); setStartedAt(Date.now());
       window.history.replaceState(null, "", `?transfer=${encodeURIComponent(r.transfer_id)}`);
       setCards(Object.fromEntries(r.agents.map((a) => [a.agent_id, { ...a, live: a.live && liveCalls, status: "calling" }])));   // no LIVE tag in a simulated run
@@ -160,6 +170,7 @@ export default function App() {
   const released = count("released");
   const ticket = twin?.ticket;
   // Delivery is a presentation-only mock until a receiving-system integration exists.
+  const visitorCard = visitorCalls ? list.find((c) => c.live) : undefined;   // the first hospital, answered by the visitor
   const demoInfoSent = !!twin && (bridgeStatus === "ended" || (bridgeMode === "mock" && bridgeStatus === "simulated"));
 
   return (
@@ -186,6 +197,14 @@ export default function App() {
               onChange={(e) => setWindowMin(Number(e.target.value))} className="w-28 accent-[#F0C06A]" />
             <b className="tabular font-medium text-ink-text">{windowMin ?? windows[specialty]?.transport_budget_min ?? 60} min</b>
           </label>
+          {visitorCalls && (
+            <label className="flex items-center" title="Optional. We call this number once and you play the first hospital's transfer desk. US numbers only; the number is not stored.">
+              <span className="sr-only">Your phone number for the first hospital call (optional)</span>
+              <input type="tel" inputMode="tel" autoComplete="tel" value={phone} disabled={searching} maxLength={20}
+                onChange={(e) => setPhone(e.target.value)} placeholder="Your phone: answer the first call"
+                className="w-[15.5rem] rounded-full border border-ink-line bg-ink-panel px-3.5 py-1.5 text-sm text-ink-text shadow-xs outline-none placeholder:text-ink-muted focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-60" />
+            </label>
+          )}
           <button onClick={onStart} disabled={searching || starting} className="btn-primary">
             {starting ? "Starting…" : searching ? "Searching…" : twin ? "New search" : "Find a bed"}
           </button>
@@ -232,6 +251,12 @@ export default function App() {
           </div>
         </div>
         </div>
+        {/* Popups: the visitor's own call, then the two doctor calls after Connect. */}
+        <div className="pointer-events-none absolute bottom-[5.5rem] right-3 flex w-[min(21rem,calc(100%-1.5rem))] flex-col items-stretch gap-2">
+          {callNote && <Popup title="Simulated search" onClose={() => setCallNote(undefined)}><p>{callNote}</p></Popup>}
+          {visitorCard && !twin && <VisitorCall card={visitorCard} />}
+          {twin && doctorPopup && bridgeStatus && <DoctorCall status={bridgeStatus} simulated={bridgeMode !== "live"} onClose={() => setDoctorPopup(false)} />}
+        </div>
       </section>
 
       {/* Decision bar. With a ticket, the ticket gets the wider column. */}
@@ -244,7 +269,7 @@ export default function App() {
                 <div className="eyebrow flex items-center gap-1.5 text-st-yes"><span className="h-1.5 w-1.5 rounded-full bg-fill-yes" />Transfer accepted</div>
                 <div className="mt-0.5 text-base font-semibold">{acceptedName}</div>
                 <div className="text-sm text-ink-muted">
-                  {bridgeMode === "live" ? (bridgeLabel[bridgeStatus ?? ""] ?? "Doctor connection requested; waiting for the phones to join") : "Simulated connection; no phones dialed"}{ticket ? ", transfer ticket created" : ""}
+                  {bridgeMode === "live" ? (bridgeLabel[bridgeStatus ?? ""] ?? "Doctor connection requested; waiting for the phones to join") : "Doctor calls are simulated in this demo"}{ticket ? ", transfer ticket created" : ""}
                   {released ? `, ${released} other ${released === 1 ? "hospital" : "hospitals"} released` : ""}.
                 </div>
                 {twin && (
@@ -310,6 +335,64 @@ export default function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+/** A floating card over the map. */
+function Popup({ title, tone, tag, onClose, children }: { title: string; tone?: "yes" | "no"; tag?: string; onClose?: () => void; children: React.ReactNode }) {
+  return (
+    <section data-map-overlay aria-label={title} aria-live="polite"
+      className="pointer-events-auto rounded-xl border border-ink-line bg-ink-panel px-3.5 py-3 text-xs text-ink-muted shadow-md">
+      <div className="flex items-start gap-2">
+        <h2 className={`text-sm font-semibold ${tone === "yes" ? "text-st-yes" : tone === "no" ? "text-st-no" : "text-ink-text"}`}>{title}</h2>
+        {onClose && <button onClick={onClose} aria-label="Close" className="-mr-1 -mt-0.5 ml-auto rounded px-1 text-base leading-none text-ink-muted hover:text-ink-text">×</button>}
+      </div>
+      {tag && <span className="mt-1 inline-flex rounded-full border border-ink-line bg-ink-bg px-2 py-0.5 text-[10px] font-medium text-ink-muted">{tag}</span>}
+      <div className="mt-1.5 leading-relaxed">{children}</div>
+    </section>
+  );
+}
+
+/** The first hospital call, answered on the visitor's own phone. */
+function VisitorCall({ card }: { card: Card }) {
+  const s = card.status;
+  if (card.error || s === "no_answer")
+    return <Popup title="Your phone wasn't reached" tone="no"><p>No answer was recorded for {card.hospital}, so the search continues with the other hospitals.</p></Popup>;
+  if (s === "calling")
+    return <Popup title="Your phone is ringing" tag="Live call"><p>You're the transfer desk at <b className="font-medium text-ink-text">{card.hospital}</b>. Answer, say yes or no, and confirm when the agent reads your answer back.</p></Popup>;
+  if (s === "declined")
+    return <Popup title="You said no" tag="Confirmed by phone"><p>{card.hospital}: {card.decline_reason ?? "no bed"}. The other hospitals are still answering.</p></Popup>;
+  if (s === "callback_requested")
+    return <Popup title="You asked for a call back" tag="Live call"><p>{card.hospital} is counted as pending.</p></Popup>;
+  return <Popup title="You said yes" tone="yes" tag="Confirmed by phone"><p>{card.hospital} can take the patient, ready in {card.ready_in_min ?? "?"} min. Stay on the line: press Connect doctors and the agent wraps up your call.</p></Popup>;
+}
+
+/** The doctor-to-doctor call after Connect: the accepting doctor hears the summary first, then the referring doctor joins. */
+function DoctorCall({ status, simulated, onClose }: { status?: string; simulated: boolean; onClose: () => void }) {
+  const steps = ["calling_accepting_doctor", "calling_sending_doctor", "connected", "ended"];
+  const step = status === "initiated" ? 0 : steps.indexOf(status ?? "");
+  if (step < 0 && status !== "failed") return null;
+  const failed = status === "failed";
+  const title = failed ? "Doctor connection failed" : step === 3 ? "Doctor call ended" : step === 2 ? "Doctors connected · one call" : "Connecting doctors";
+  const rows: [string, string, "wait" | "ring" | "done"][] = [
+    ["Accepting doctor", step === 0 ? "Ringing · hears the referral summary first" : step === 3 ? "Call ended" : "Heard the summary", step === 0 ? "ring" : "done"],
+    ["Referring doctor", step < 1 ? "Joins after the summary" : step === 1 ? "Ringing" : step === 3 ? "Call ended" : "Joined the call", step < 1 ? "wait" : step === 1 ? "ring" : "done"],
+  ];
+  const dot = { wait: "bg-fill-none", ring: "bg-fill-calling animate-pulse", done: "bg-fill-yes" };
+  return (
+    <Popup title={title} tone={failed ? "no" : step >= 2 ? "yes" : undefined} tag={simulated ? "Demo · simulated call" : "Live call"} onClose={onClose}>
+      {!failed && (
+        <ul className="space-y-1">
+          {rows.map(([who, what, state]) => (
+            <li key={who} className="flex items-center gap-2">
+              <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot[state]}`} />
+              <span className="font-medium text-ink-text">{who}</span>
+              <span className="truncate">{what}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Popup>
   );
 }
 

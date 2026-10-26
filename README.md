@@ -6,7 +6,7 @@ Uzima (oo-ZEE-mah, Swahili for life) helps a clinician at a small hospital find 
 
 Hospitals don't install anything. They just answer the phone.
 
-- **Live demo:** [project-uzima.vercel.app](https://project-uzima.vercel.app/)
+- **Live demo:** [uzima-health.vercel.app](https://uzima-health.vercel.app/)
 - **Demo video (1:42):** [docs/media/project-uzima-demo.mp4](docs/media/project-uzima-demo.mp4)
 - **The story behind it:** [docs/STORY.md](docs/STORY.md)
 
@@ -90,9 +90,11 @@ For an offline rehearsal, set `TWILIO_ENABLED=0` and `SIM_A1_ANSWER=available`. 
 
 A passing preflight doesn't prove phone audio works; rehearse with two people as described in [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md).
 
+For a public demo, `VISITOR_CALLS=1` lets a visitor type their own US number so the first hospital call rings their phone; every other hospital is simulated, calls are capped per day, and the number is never shown or stored as entered. `DOCTOR_CALLS=simulated` keeps the two doctor calls on the dashboard instead of dialing.
+
 ## Deployment
 
-The hosted demo runs the dashboard on Vercel and the backend on Google Cloud Run, with AWS Bedrock for the model and Twilio for calls. See [docs/VERCEL.md](docs/VERCEL.md) and [infra/gcp/README.md](infra/gcp/README.md). Templates for AWS (App Runner, DynamoDB) and Kubernetes (one Job per hospital agent) are in [`infra/`](infra/) but aren't active.
+The hosted demo runs the dashboard on Vercel and the backend on Google Cloud Run, scaled to zero and simulated by default; AWS Bedrock (the model) and Twilio (calls) switch on with their credentials. See [docs/VERCEL.md](docs/VERCEL.md) and [infra/gcp/README.md](infra/gcp/README.md). Templates for AWS (App Runner, DynamoDB) and Kubernetes (one Job per hospital agent) are in [`infra/`](infra/) but aren't active.
 
 ## Data
 

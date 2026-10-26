@@ -1,6 +1,8 @@
 """Orchestrator: survival-window selection, bed-memory skip, swarm launch, ranking, hold and release, handoff twin."""
 import asyncio
+import hashlib
 import json
+import re
 import httpx
 import os
 import time
@@ -8,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.orchestrator.app.launcher import get_launcher
@@ -25,6 +27,9 @@ HANDOFF_MIN = 10
 MEMORY_TTL_S = 30 * 60
 SWARM_TIMEOUT = int(os.getenv("SWARM_TIMEOUT_SECONDS", "90"))
 TRANSFERS: dict[str, dict] = {}
+VISITOR_CALLS: dict[str, dict[str, int]] = {}   # UTC day -> {"total": n, number hash: n}
+# Doctor calls shown on the dashboard when they are not dialed: seconds after Connect -> status.
+SIM_HANDOFF = ((0, "calling_accepting_doctor"), (5, "calling_sending_doctor"), (9, "connected"), (25, "ended"))
 
 QUESTION = {
     Specialty.cardiac_icu: "Do you have a cardiac ICU bed and a cath lab team available right now?",
@@ -42,6 +47,42 @@ def live_phones() -> list[str]:
     return [p.strip() for p in raw.split(",") if p.strip()] or ["[demo phone]"]
 
 
+def visitor_phone(raw: str | None) -> tuple[str | None, str | None]:
+    """Public demo (VISITOR_CALLS=1): a visitor's own US number answers the first hospital call.
+    Returns (number, None), or (None, "invalid" | "unavailable" | "limit"). Daily limits keep the phone bill small;
+    numbers are counted by hash and never stored as entered."""
+    digits = re.sub(r"\D", "", raw or "")
+    if len(digits) == 11 and digits[0] == "1":
+        digits = digits[1:]
+    if not re.fullmatch(r"[2-9]\d{2}[2-9]\d{6}", digits) or digits[:3] in {"900", "976"}:
+        return None, "invalid"
+    allowed = {re.sub(r"\D", "", p)[-10:] for p in config.env("VISITOR_CALLS_ALLOW").split(",") if p.strip()}
+    if allowed and digits not in allowed:   # e.g. a phone trial account can only reach verified numbers
+        return None, "unavailable"
+    phone = "+1" + digits
+    day = datetime.now(timezone.utc).date().isoformat()
+    if day not in VISITOR_CALLS:
+        VISITOR_CALLS.clear()            # keep only today's counts
+    counts = VISITOR_CALLS.setdefault(day, {"total": 0})
+    key = hashlib.sha256(phone.encode()).hexdigest()
+    if (counts["total"] >= int(config.env("VISITOR_CALLS_PER_DAY", "10"))
+            or counts.get(key, 0) >= int(config.env("VISITOR_CALLS_PER_NUMBER", "2"))):
+        return None, "limit"
+    counts["total"] += 1
+    counts[key] = counts.get(key, 0) + 1
+    return phone, None
+
+
+def public_header(h: AgentHeader) -> dict:
+    """Agent headers as the dashboard sees them: phone numbers stay on the server."""
+    return {**h.model_dump(mode="json"), "phone": "[private]" if h.live else h.phone}
+
+
+def simulated_handoff(seconds: float) -> str:
+    scale = config.sim_time_scale()
+    return [status for at, status in SIM_HANDOFF if seconds >= at * scale][-1]
+
+
 def window_for(specialty: Specialty, window_min: int | None = None) -> dict:
     """The case's default window, or the clinician's own "care within N minutes" (10 to 120)."""
     w = dict(DATA["windows"][DATA["demo_cases"][specialty.value]["window"]])
@@ -52,7 +93,7 @@ def window_for(specialty: Specialty, window_min: int | None = None) -> dict:
 
 
 def select_centers(specialty: Specialty, memory: dict | None = None, override_outside: bool = False,
-                   window_min: int | None = None) -> list[AgentHeader]:
+                   window_min: int | None = None, phones: list[str] | None = None) -> list[AgentHeader]:
     """Every capable center inside the window, nearest first; skips centers that said no in the last 30 min."""
     case = DATA["demo_cases"][specialty.value]
     window = window_for(specialty, window_min)
@@ -66,8 +107,8 @@ def select_centers(specialty: Specialty, memory: dict | None = None, override_ou
             continue
         picked.append((cid, t))
     if not picked and memory:            # nothing left after memory skips: call everyone in the window again
-        return select_centers(specialty, None, override_outside, window_min)
-    phones = live_phones()
+        return select_centers(specialty, None, override_outside, window_min, phones)
+    phones = live_phones() if phones is None else phones
     headers = []
     for i, (cid, t) in enumerate(picked, start=1):
         c = CENTERS[cid]
@@ -94,19 +135,25 @@ async def _results(tid: str) -> list[dict]:
 
 
 @app.post("/transfers")
-async def start_transfer(case: Case, background: BackgroundTasks):
+async def start_transfer(case: Case, background: BackgroundTasks, x_uzima_demo_phone: str | None = Header(default=None)):
     try:
         async with client("collector") as c:
             memory = (await c.get("/memory")).json()
     except Exception:
         memory = {}
-    headers = select_centers(case.specialty, memory, window_min=case.window_min)
+    phones, problem = None, None
+    if config.env("VISITOR_CALLS") == "1":    # public demo: only a visitor's own number ever rings
+        ready = x_uzima_demo_phone and config.has_twilio()
+        phone, problem = visitor_phone(x_uzima_demo_phone) if ready else (None, None)
+        phones = [phone] if phone else []
+    headers = select_centers(case.specialty, memory, window_min=case.window_min, phones=phones)
     tid = uuid.uuid4().hex[:10]
     TRANSFERS[tid] = {"case": case, "headers": headers, "started": time.time(), "state": "searching"}
-    await _tevent(tid, "search_started", agents=[h.model_dump(mode="json") for h in headers],
+    await _tevent(tid, "search_started", agents=[public_header(h) for h in headers],
                   window=window_for(case.specialty, case.window_min))
     background.add_task(get_launcher().launch, tid, headers)
-    return {"transfer_id": tid, "agents": [h.model_dump(mode="json") for h in headers]}
+    return {"transfer_id": tid, "agents": [public_header(h) for h in headers],
+            "visitor_call": any(h.live for h in headers) if phones is not None else None, "visitor_call_problem": problem}
 
 
 @app.get("/transfers/{tid}")
@@ -122,6 +169,8 @@ async def transfer_status(tid: str):
                     t["bridge"] = response.json()
         except httpx.HTTPError:
             pass  # Keep the last confirmed state during a temporary outage.
+    if (t.get("bridge") or {}).get("mode") == "mock":
+        t["bridge"] = {**t["bridge"], "status": simulated_handoff(time.time() - t["accepted_at"])}
     results = await _results(tid)
     elapsed = t.get("accepted_at", time.time()) - t["started"]
     ranking = rank(results)
@@ -130,7 +179,7 @@ async def transfer_status(tid: str):
     return {"transfer_id": tid, "state": t["state"], "elapsed_s": round(elapsed, 1), "agents": len(t["headers"]),
             "answered": len(results), "done": done, "results": results, "ranking": ranking,
             "recommendation": ranking[0] if ranking else None, "twin": t.get("twin"), "bridge": t.get("bridge"),
-            "headers": [h.model_dump(mode="json") for h in t["headers"]],
+            "headers": [public_header(h) for h in t["headers"]],
             "case": t["case"].model_dump(mode="json") if t.get("case") else None}
 
 
@@ -185,7 +234,7 @@ async def accept(tid: str, req: AcceptRequest):
             raise HTTPException(502, "Doctor connection failed. No connection is confirmed; please retry.")
         if bridge.get("mode") not in {"live", "mock"}:
             raise HTTPException(502, "The phone service did not acknowledge the connection request.")
-        t["bridge"] = {"mode": bridge["mode"], "status": bridge.get("status", "initiated") if bridge["mode"] == "live" else "simulated"}
+        t["bridge"] = {"mode": bridge["mode"], "status": bridge.get("status", "initiated") if bridge["mode"] == "live" else simulated_handoff(0)}
         t["state"] = "accepted"
         t["accepted_at"] = time.time()
         await _tevent(tid, "held", chosen["hospital_id"])
@@ -206,4 +255,5 @@ def centers():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "integrations": config.integrations(), "centers": len(CENTERS)}
+    return {"ok": True, "integrations": config.integrations(), "centers": len(CENTERS),
+            "visitor_calls": config.env("VISITOR_CALLS") == "1" and config.has_twilio()}

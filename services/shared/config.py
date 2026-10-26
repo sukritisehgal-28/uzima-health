@@ -32,8 +32,22 @@ def has_bedrock() -> bool:
     return env("USE_BEDROCK", "0") == "1"
 
 
+PHONE_KEYS = {"twilio": ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"),
+              # Telnyx's TwiML-compatible TeXML API: account id, TeXML application id, API key, webhook public key
+              "telnyx": ("TELNYX_ACCOUNT_SID", "TELNYX_APP_ID", "TELNYX_API_KEY", "TELNYX_PUBLIC_KEY", "TELNYX_FROM_NUMBER")}
+
+
+def phone_provider() -> str:
+    return "telnyx" if env("PHONE_PROVIDER", "twilio").lower() == "telnyx" else "twilio"
+
+
 def has_twilio() -> bool:
-    return env("TWILIO_ENABLED", "1") == "1" and all(env(k) for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"))
+    """Real phone calls are on: Twilio, or Telnyx with PHONE_PROVIDER=telnyx (same call scripts)."""
+    return env("TWILIO_ENABLED", "1") == "1" and all(env(k) for k in PHONE_KEYS[phone_provider()])
+
+
+def from_number() -> str:
+    return env("TELNYX_FROM_NUMBER" if phone_provider() == "telnyx" else "TWILIO_FROM_NUMBER")
 
 
 def has_stedi() -> bool:

@@ -95,9 +95,12 @@ def line(s: dict, speaker: str, text: str):
 def ask(s: dict, text: str) -> str:
     line(s, "agent", text)
     digits = ' numDigits="1"' if s["stage"] in {"availability", "confirm"} else ''
-    return (f'<Response><Gather input="speech dtmf" action="{escape(url(s["token"], s["turn"]))}" '
+    action = escape(url(s["token"], s["turn"]))
+    # Telnyx may skip the action when nothing is heard; send that turn back here so the agent asks again.
+    again = f'<Redirect method="POST">{action}</Redirect>' if config.phone_provider() == "telnyx" else ""
+    return (f'<Response><Gather input="speech dtmf" action="{action}" '
             f'method="POST" actionOnEmptyResult="true" timeout="8" speechTimeout="2" language="en-US"{digits}>'
-            f'<Say>{escape(text)}</Say></Gather></Response>')
+            f'<Say>{escape(text)}</Say></Gather>{again}</Response>')
 
 
 def readback(s: dict) -> str:
@@ -118,8 +121,20 @@ async def start(header: AgentHeader, transfer_id: str, brief: str) -> str:
          "answered_at": None, "reported": False, "cache": {}, "lock": asyncio.Lock()}
     sessions[token] = s
     await Emitter(header, transfer_id).event("call_started", source="live")
-    return ask(s, f"Hello, this is an AI assistant calling for a referring doctor. {brief} "
+    # In the public demo the person who entered their number plays the hospital's transfer desk.
+    role = (f"This is the Project Uzima demo you asked for. You are the transfer desk at {header.hospital}. "
+            if config.env("VISITOR_CALLS") == "1" else "")
+    return ask(s, f"Hello, this is an AI assistant calling for a referring doctor. {role}{brief} "
                   f"{header.capability_question} Say yes or no, or press 1 for yes and 2 for no.")
+
+
+def close(transfer_id: str, agent_id: str) -> bool:
+    """Stop the hold loop for a hospital whose call is being ended by the gateway. True if it was on hold."""
+    held = False
+    for s in sessions.values():
+        if s["tid"] == transfer_id and s["header"].agent_id == agent_id and s["stage"] == "hold":
+            s["stage"], held = "done", True
+    return held
 
 
 async def finish(s: dict, confirmed: bool):
@@ -136,7 +151,31 @@ async def finish(s: dict, confirmed: bool):
     s["reported"] = True
 
 
-def validate_signature(request: Request, params: dict[str, list[str]]):
+def callback_params(request: Request, body: bytes) -> dict[str, list[str]]:
+    """Call callbacks arrive as a form (Twilio, usually Telnyx) or as JSON."""
+    if request.headers.get("content-type", "").startswith("application/json"):
+        data = json.loads(body or b"{}")
+        return {key: [str(value)] for key, value in data.items() if value is not None}
+    return parse_qs(body.decode(), keep_blank_values=True)
+
+
+def validate_telnyx(request: Request, body: bytes):
+    """Telnyx signs timestamp|raw body with Ed25519; the public key is in its portal."""
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    stamp = request.headers.get("telnyx-timestamp", "")
+    try:
+        if abs(time.time() - int(stamp)) > 300:
+            raise ValueError("stale")
+        key = Ed25519PublicKey.from_public_bytes(base64.b64decode(config.env("TELNYX_PUBLIC_KEY")))
+        key.verify(base64.b64decode(request.headers.get("telnyx-signature-ed25519", "")), stamp.encode() + b"|" + body)
+    except (ValueError, InvalidSignature):
+        raise HTTPException(403, "Invalid Telnyx signature")
+
+
+def validate_signature(request: Request, params: dict[str, list[str]], body: bytes = b""):
+    if config.phone_provider() == "telnyx":
+        return validate_telnyx(request, body)
     secret = config.env("TWILIO_AUTH_TOKEN")
     public_url = f"https://{config.env('PUBLIC_HOST')}{request.url.path}"
     if request.url.query:
@@ -149,11 +188,16 @@ def validate_signature(request: Request, params: dict[str, list[str]]):
 
 @router.post("/voice/{token}/{turn}")
 async def respond(token: str, turn: int, request: Request):
-    params = parse_qs((await request.body()).decode(), keep_blank_values=True)
-    validate_signature(request, params)
+    body = await request.body()
+    params = callback_params(request, body)
+    validate_signature(request, params, body)
     s = sessions.get(token)
     if not s:
         raise HTTPException(404, "Call session expired")
+    from services.sync_twilio.app.main import live_calls
+    entry = live_calls.get((s["tid"], s["header"].agent_id))
+    if entry is not None and not entry.get("call_sid") and params.get("CallSid"):
+        entry["call_sid"] = params["CallSid"][0]   # Telnyx may only report the call id here
     async with s["lock"]:
         if turn in s["cache"]:
             return Response(s["cache"][turn], media_type="text/xml")

@@ -63,3 +63,22 @@ test('relay reports offline backend without revealing internal errors', async ()
     else process.env.UZIMA_BACKEND_URL = previousOrigin;
   }
 });
+
+test('relay passes the visitor number only with a new search', async () => {
+  const original = globalThis.fetch;
+  const previousOrigin = process.env.UZIMA_BACKEND_URL;
+  process.env.UZIMA_BACKEND_URL = 'https://backend.example';
+  const seen = [];
+  globalThis.fetch = async (url, init) => { seen.push([url, init.headers['X-Uzima-Demo-Phone']]); return new Response('{}'); };
+  try {
+    for (const path of ['transfers', 'transfers/abcdef1234/accept']) {
+      await handler({ url: `/api/relay?path=${path}`, query: { path }, method: 'POST', headers: { 'x-uzima-demo-phone': 'k' }, body: {} }, response());
+    }
+    assert.deepEqual(seen, [['https://backend.example/dashboard/transfers', 'k'],
+      ['https://backend.example/dashboard/transfers/abcdef1234/accept', undefined]]);
+  } finally {
+    globalThis.fetch = original;
+    if (previousOrigin === undefined) delete process.env.UZIMA_BACKEND_URL;
+    else process.env.UZIMA_BACKEND_URL = previousOrigin;
+  }
+});

@@ -1,6 +1,6 @@
 # Vercel demo hosting
 
-The React dashboard and API relay run at `https://project-uzima.vercel.app/`. The Python backend runs on Google Cloud Run at `https://uzima-backend-704882703182.us-central1.run.app`. AWS Bedrock provides the AI model and Twilio handles phone calls. The host laptop and temporary tunnel are no longer needed for the cloud deployment. See `infra/gcp/README.md` for backend operation.
+The React dashboard and API relay run at `https://uzima-health.vercel.app/`. The Python backend runs on Google Cloud Run; see `infra/gcp/README.md`. The hosted demo is simulated by default, so no AI model or phone provider is called.
 
 ## Configuration
 
@@ -12,10 +12,10 @@ From `apps/dashboard`, link the desired Vercel project and deploy a preview with
 vercel deploy --yes --target preview \
   --build-env VITE_ORCHESTRATOR_URL=/api \
   --build-env VITE_COLLECTOR_WS= \
-  --env UZIMA_BACKEND_URL=https://uzima-backend-704882703182.us-central1.run.app
+  --env UZIMA_BACKEND_URL=<cloud-run-origin>
 ```
 
-Only the backend origin is stored on Vercel. AWS and Twilio credentials are held in Google Secret Manager. Hosted updates use the existing one-second status poll instead of a WebSocket server.
+Only the backend origin is stored on Vercel (`UZIMA_BACKEND_URL`). Any provider credentials stay in Google Secret Manager. Hosted updates use the existing one-second status poll instead of a WebSocket server.
 
 The Cloud Run hostname is also used for Twilio callbacks and ticket/record links. The backend currently keeps transfers and tickets in memory, so a backend restart or deployment clears them.
 

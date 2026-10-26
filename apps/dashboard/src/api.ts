@@ -32,15 +32,17 @@ export async function getHealth() {   // which integrations are real right now (
 export async function getCenters() {
   return (await fetch(`${ORCH}/centers`)).json();
 }
-export async function startTransfer(specialty: string, window_min?: number) {
+export async function startTransfer(specialty: string, window_min?: number, phone?: string) {
   // fictional demo patients: a 62-year-old man; an 8-year-old for pediatric trauma; a 28-year-old woman for childbirth
   const child = specialty === "trauma_pediatric", birth = specialty === "childbirth";
   const body = { age: child ? 8 : birth ? 28 : 62, sex: birth ? "Female" : "Male", is_pediatric: child, specialty, condition: LABEL[specialty],
                  onset_or_last_known_well: new Date(Date.now() - 50 * 60_000).toISOString(),   // fictional onset 50 min before the search
                  key_scores: {}, window_min };
-  const r = await fetch(`${ORCH}/transfers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  // The visitor's own number (public demo) rides in a header, never in the case or the URL.
+  const r = await fetch(`${ORCH}/transfers`, { method: "POST", body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json", ...(phone ? { "X-Uzima-Demo-Phone": phone } : {}) } });
   if (!r.ok) throw new Error(await r.text());
-  return r.json() as Promise<{ transfer_id: string; agents: Agent[] }>;
+  return r.json() as Promise<{ transfer_id: string; agents: Agent[]; visitor_call?: boolean | null; visitor_call_problem?: "invalid" | "unavailable" | "limit" | null }>;
 }
 export async function getStatus(tid: string) {
   return (await fetch(`${ORCH}/transfers/${tid}`)).json();
