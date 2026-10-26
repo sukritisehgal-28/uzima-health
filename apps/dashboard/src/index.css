@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { margin: 0; background: #F7F6F3; color: #0A0B0D; font-family: Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased; font-feature-settings: "tnum"; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+@layer components {
+  /* Pitch-deck label: mono, uppercase, tracked, muted. Section labels only. */
+  .eyebrow { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; line-height: 16px; font-weight: 400;
+    letter-spacing: .12em; text-transform: uppercase; color: #5F636B; }
+  /* The pitch's `.row.win`: recommended / winning row. */
+  .win { background: rgba(240,192,106,.14); box-shadow: inset 0 0 0 1px rgba(240,192,106,.6); }
+  .btn-primary { @apply inline-flex items-center justify-center whitespace-nowrap rounded-full bg-ink-text px-4 py-1.5 text-sm font-medium text-white
+    transition-colors hover:bg-[#2A2D33] disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-secondary { @apply inline-flex items-center justify-center whitespace-nowrap rounded-full border border-ink-line bg-ink-panel px-4 py-1.5 text-sm
+    font-medium text-ink-text transition-colors hover:border-[#CFCCC4] hover:bg-ink-raised; }
+}
+
+/* Map pins. The marker element itself is positioned by MapLibre; only its children are positioned here. */
+.mp-marker { width: 24px; height: 24px; }
+.mp-dot { position: relative; width: 24px; height: 24px; border-radius: 9999px; display: flex; align-items: center; justify-content: center;
+  font: 500 10px/1 "Geist Mono", ui-monospace, monospace; color: #0A0B0D; border: 2px solid #FFFFFF; cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(10,11,13,.14), 0 1px 2px rgba(10,11,13,.12); }
+.mp-dot.live { box-shadow: 0 0 0 1.5px #2F6FD6, 0 1px 2px rgba(10,11,13,.12); }
+/* A hospital that says yes is drawn bigger the moment it turns green; every other pin stays the same size and still. */
+.mp-dot.available, .mp-dot.held { transform: scale(1.55); z-index: 2; }
+.mp-dot.accepted { transform: scale(1.6); z-index: 3; outline: 2px solid #1E8A4C; outline-offset: 2px; }
+.mp-dot.released, .mp-dot.no_answer { color: #5F636B; }
+/* Calling: a still amber ring around the dot (no animation). */
+.mp-pulse::after { content: ""; position: absolute; inset: -5px; border-radius: 9999px; border: 2px solid rgba(242,179,91,.55); pointer-events: none; }
+
+.mp-label { position: absolute; width: max-content; max-width: 220px; padding: 4px 8px 5px; border-radius: 4px;
+  background: #FFFFFF; border: 1px solid #E4E2DC; border-left-width: 2px; color: #0A0B0D; box-shadow: 0 1px 2px rgba(10,11,13,.06);
+  font: 11px/1.35 Geist, ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
+.mp-label .t { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mp-label .t .id { color: #8E9197; font: 500 10px "Geist Mono", ui-monospace, monospace; margin-right: 5px; }
+.mp-label .t .live { display: inline-block; margin-right: 5px; padding: 0 4px; border: 1px solid #2F6FD6; border-radius: 999px;
+  background: rgba(143,184,255,.14); color: #2F6FD6; font: 500 9px/12px "Geist Mono", ui-monospace, monospace; letter-spacing: .08em;
+  text-transform: uppercase; vertical-align: 1px; }
+.mp-label .s { white-space: nowrap; font-weight: 500; }
+.mp-label.hidden-label { display: none; }
+.mp-top { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
+.mp-bottom { top: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
+.mp-left { right: calc(100% + 6px); top: 50%; transform: translateY(-50%); }
+.mp-right { left: calc(100% + 6px); top: 50%; transform: translateY(-50%); }
+
+/* Sending ER: ink square, white ER; while searching a gold ring grows out of it. */
+.mp-er { position: relative; width: 28px; height: 28px; border-radius: 6px; background: #0A0B0D; color: #FFFFFF; display: flex; align-items: center;
+  justify-content: center; font: 600 11px/1 Geist, ui-sans-serif, system-ui, sans-serif; letter-spacing: .02em; border: 2px solid #FFFFFF;
+  box-shadow: 0 0 0 1px rgba(10,11,13,.18), 0 1px 2px rgba(10,11,13,.16); cursor: pointer; }
+.mp-er.searching::after { content: ""; position: absolute; inset: -2px; border-radius: 6px; border: 2px solid #F0C06A; pointer-events: none;
+  animation: mp-ring-er 1.8s ease-out infinite; }
+@keyframes mp-ring-er { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2); opacity: 0; } }
+
+/* MapLibre popup, controls and attribution, light. */
+.maplibregl-popup-content { background: #FFFFFF; color: #0A0B0D; border: 1px solid #E4E2DC; border-radius: 8px;
+  font: 12px/1.45 Geist, ui-sans-serif, system-ui, sans-serif; white-space: pre-line; box-shadow: 0 1px 2px rgba(10,11,13,.06);
+  padding: 8px 24px 8px 10px; }
+.maplibregl-popup-tip { border-top-color: #FFFFFF !important; border-bottom-color: #FFFFFF !important; }
+.maplibregl-popup-close-button { color: #8E9197; font-size: 15px; padding: 0 6px; }
+.maplibregl-popup-close-button:hover { background: transparent !important; color: #0A0B0D; }
+.maplibregl-ctrl-group { background: #FFFFFF !important; border: 1px solid #E4E2DC; border-radius: 8px !important;
+  box-shadow: 0 1px 2px rgba(10,11,13,.06) !important; overflow: hidden; }
+.maplibregl-ctrl-group button + button { border-top: 1px solid #E4E2DC !important; }
+.maplibregl-ctrl-group button:not(:disabled):hover { background-color: #F1EFEA !important; }
+.maplibregl-ctrl-attrib { background: rgba(255,255,255,.85) !important; color: #8E9197; }
+.maplibregl-ctrl-attrib a { color: #5F636B !important; }

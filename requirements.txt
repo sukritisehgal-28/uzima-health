@@ -1,0 +1,13 @@
+# Everything needed to run all services locally and the tests.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+httpx>=0.27
+websockets>=12
+cryptography>=42
+segno>=1.6
+pytest>=8
+# AWS integrations; CRT also supports AWS CLI browser-login credentials.
+boto3[crt]>=1.41.0,<2
+# Optional, only when LAUNCH_MODE=k8s:
+# kubernetes>=29

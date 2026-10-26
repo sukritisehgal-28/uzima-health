@@ -1,0 +1,1149 @@
+{
+  "version": 2,
+  "region": "Mississippi Delta",
+  "as_of": "2026-09-25",
+  "reliability_scale": {
+    "A": "government or peer-reviewed",
+    "B": "state designation list or the hospital's own site",
+    "C": "news",
+    "D": "unverified - not used"
+  },
+  "note": "phone_reference is for reference only. The demo dials teammate numbers, never these. Positions from Google Maps via Apify (compass/crawler-google-places), 2026-09-25/26.",
+  "sending": {
+    "id": "south_sunflower",
+    "name": "South Sunflower County Hospital",
+    "city": "Indianola",
+    "state": "MS",
+    "county": "Sunflower",
+    "lat": 33.4576013,
+    "lng": -90.6495666,
+    "phone_reference": "(662) 887-5235",
+    "website": "https://www.southsunflower.com/",
+    "place_id": "ChIJlXelkpe1K4YR3JexncVEytY",
+    "services_listed": [
+      "Emergency Department",
+      "Inpatient Care",
+      "Obstetrics",
+      "Surgical Services"
+    ],
+    "icu_listed": false,
+    "stroke_level": {
+      "value": "MS Level 3",
+      "verified": true,
+      "reliability": "B",
+      "source": "https://www.mshealthcarealliance.org/systems-of-care/stroke/stroke-hospitals/"
+    },
+    "county_context": {
+      "population": 24333,
+      "median_household_income_usd": 39956,
+      "per_capita_income_usd": 21138,
+      "poverty_rate_pct": 28.9,
+      "source": "https://censusreporter.org/profiles/05000US28133-sunflower-county-ms/ (ACS 2024 5-year)",
+      "state_poverty_rate_pct_2024": 17.8,
+      "state_source": "https://usafacts.org/answers/what-is-the-us-poverty-rate/state/mississippi/"
+    },
+    "short_name": "South Sunflower, Indianola",
+    "childbirth_checked": {
+      "value": false,
+      "verified": true,
+      "reliability": "B",
+      "source": "https://www.southsunflower.org/getpage.php?name=OB_and_Newborn_Care&sub=Services",
+      "note": "Still delivers babies (renovated maternity suite, CMS Birthing-Friendly), but no NICU or maternal-fetal medicine is listed: high-risk births transfer out",
+      "nicu_level": "none",
+      "high_risk_ob": false
+    }
+  },
+  "context_only": [
+    {
+      "name": "UMMC Greenwood (formerly Greenwood Leflore Hospital)",
+      "city": "Greenwood",
+      "state": "MS",
+      "lat": 33.5176844,
+      "lng": -90.2010225,
+      "straight_line_miles": 26,
+      "note": "Nearest large hospital to Indianola. ICU shut before the April 8, 2026 layoffs of 86 staff and closure of four services; now operated by UMMC with a 24-hour ED. Excluded as a receiving center.",
+      "sources": [
+        "https://www.mississippifreepress.org/struggling-greenwood-leflore-hospital-lays-off-86-employees-shuttering-four-more-services/",
+        "https://umc.edu/greenwood"
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "name": "Saint Francis Hospital-Memphis",
+      "reason": "Thrombectomy certification could not be verified (site blocked; TN designation report unreadable)"
+    },
+    {
+      "name": "Baptist Health Medical Center-North Little Rock",
+      "reason": "Only an Arkansas Stroke Ready Hospital; not thrombectomy-capable"
+    }
+  ],
+  "transport_model": {
+    "road_factor": 1.2,
+    "ground_mph": 50,
+    "ground_overhead_min": 10,
+    "air_mph": 130,
+    "air_overhead_min": 35,
+    "note": "Estimates for the demo: road miles = straight line x 1.2; ground at 50 mph + 10 min loading; air = 35 min launch/loading + 130 mph. Replace with AWS Location road routing at build time."
+  },
+  "windows": {
+    "cardiac_icu": {
+      "label": "Heart attack (STEMI) needing cath lab + cardiac ICU",
+      "transport_budget_min": 75,
+      "hard_max_min": 120,
+      "basis": "AHA: door-in-door-out <=30 min for STEMI transfers (only 10-14% of hospitals meet it) - Zaidi et al., JACC Case Reports 2025, https://pmc.ncbi.nlm.nih.gov/articles/PMC12790212/ . Total first-medical-contact-to-device goal of 120 min is an AHA/ACC guideline target; citation to be attached (see open questions). Budget = 120 - 30 DIDO - 15 door-to-device."
+    },
+    "thrombectomy": {
+      "label": "Large-vessel stroke needing thrombectomy",
+      "transport_budget_min": 90,
+      "hard_max_min": 240,
+      "basis": "AHA-recommended door-in-door-out <=90 min; only 26% of transfers meet it - Lancet Neurology, Jan 2026 via https://www.eurekalert.org/news-releases/1113022 . Hard max reflects the standard 6-hour thrombectomy window minus time already elapsed; guideline citation to be attached."
+    },
+    "trauma": {
+      "label": "Severe injury needing a Level I/II trauma center (plus burn or pediatric team when needed)",
+      "transport_budget_min": 60,
+      "hard_max_min": 90,
+      "basis": "60-minute access to definitive trauma care is the standard used in JAMA Network Open, Feb 2026: 42% of rural residents lack it by ground - https://pmc.ncbi.nlm.nih.gov/articles/PMC12910394/"
+    },
+    "childbirth": {
+      "label": "High-risk childbirth needing labor and delivery, an emergency C-section team and a NICU",
+      "transport_budget_min": 60,
+      "hard_max_min": 120,
+      "basis": "No national time standard exists for high-risk obstetric transfers; 60/120 min is the team's demo default and the clinician sets the real limit with Care within."
+    }
+  },
+  "centers": [
+    {
+      "id": "delta_health",
+      "name": "Delta Health System-The Medical Center",
+      "city": "Greenville",
+      "state": "MS",
+      "lat": 33.4106927,
+      "lng": -91.0352789,
+      "phone_reference": "(662) 378-3783",
+      "website": "https://www.deltahealthsystem.org/locations/delta-regional-medical-center/",
+      "place_id": "ChIJnQTu7xXtK4YR2Ui15Qti0UQ",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.deltahealthsystem.org/services/cardiology/",
+          "note": "Cardiac cath lab; 'only heart attack (STEMI) receiving facility in the region', 24-hour"
+        },
+        "thrombectomy": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.mshealthcarealliance.org/systems-of-care/stroke/stroke-hospitals/",
+          "note": "MS stroke Level 3"
+        },
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.deltahealthsystem.org/services/obstetrics-gynecology/maternity-center/",
+          "note": "Labor and delivery suites, obstetric operating room, Level II newborn nursery (special care, not Level III); no maternal-fetal medicine listed",
+          "nicu_level": "II",
+          "high_risk_ob": false
+        }
+      },
+      "straight_line_miles": 22,
+      "est_road_miles": 27,
+      "est_ground_min": 42,
+      "est_air_min": 45,
+      "short_name": "Delta Health, Greenville"
+    },
+    {
+      "id": "ummc",
+      "name": "University of Mississippi Medical Center",
+      "city": "Jackson",
+      "state": "MS",
+      "lat": 32.3303534,
+      "lng": -90.1728317,
+      "phone_reference": "(601) 984-1000",
+      "website": "http://www.umc.edu/",
+      "place_id": "ChIJ2134FOkyKIYRPgJQwTVb-aQ",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://umc.edu/Healthcare/Heart/Heart_Home.html",
+          "note": "Interventional cardiology, cardiothoracic surgery, cardiovascular ICU, heart attack care"
+        },
+        "thrombectomy": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.umc.edu/Healthcare/Stroke/Quality/comprehensive.html",
+          "note": "Joint Commission Comprehensive Stroke Center; MS stroke Level 1"
+        },
+        "trauma_level": {
+          "value": "I",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://umc.edu/som/Departments%20and%20Offices/SOM%20Departments/Surgery/Faculty-and-Divisions/trauma-critical-care/Overview.html",
+          "note": "Mississippi's only Level I trauma center"
+        },
+        "burn": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://umc.edu/som/Departments%20and%20Offices/SOM%20Departments/Surgery/Faculty-and-Divisions/trauma-critical-care/Overview.html",
+          "note": "Mississippi Burn Center"
+        },
+        "pediatric_trauma": {
+          "value": "Level 1",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://umc.edu/Childrens/Childrens%20Emergency%20Medicine/Childrens-Emergency-Medicine.html",
+          "note": "State's only dedicated children's ED and Level 1 trauma care"
+        },
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://umc.edu/Healthcare/Womens%20Health/Pregnancy%20and%20Childbirth/childbirthing.html",
+          "note": "Wiser Hospital for Women and Infants: labor and delivery for high-risk pregnancies, maternal-fetal medicine, Level IV NICU",
+          "nicu_level": "IV",
+          "high_risk_ob": true
+        }
+      },
+      "straight_line_miles": 83,
+      "est_road_miles": 99,
+      "est_ground_min": 129,
+      "est_air_min": 73,
+      "short_name": "UMMC, Jackson"
+    },
+    {
+      "id": "st_dominic",
+      "name": "St. Dominic Hospital",
+      "city": "Jackson",
+      "state": "MS",
+      "lat": 32.3332635,
+      "lng": -90.1652338,
+      "phone_reference": "(601) 200-2000",
+      "website": "https://www.fmolhs.org/locations/greater-jackson/st-dominics-hospital",
+      "place_id": "ChIJXYdRlJUyKIYRM3qCpKG7PCA",
+      "capabilities": {
+        "thrombectomy": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.mshealthcarealliance.org/systems-of-care/stroke/stroke-hospitals/",
+          "note": "MS stroke Level 1"
+        },
+        "cardiac_icu": {
+          "value": null,
+          "verified": false,
+          "reliability": "D",
+          "source": "https://www.fmolhs.org/",
+          "note": "Hospital site unreachable during verification (certificate error); ACC cath-lab accreditation reported but not confirmed; NOT used for the cardiac case"
+        },
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.fmolhs.org/locations/greater-jackson/st-dominics-maternal-and-newborn-care",
+          "note": "Labor and delivery, 24/7 OB emergency department, 23-bed Level III NICU; no maternal-fetal medicine service listed",
+          "nicu_level": "III",
+          "high_risk_ob": null
+        }
+      },
+      "straight_line_miles": 83,
+      "est_road_miles": 99,
+      "est_ground_min": 129,
+      "est_air_min": 73,
+      "short_name": "St. Dominic, Jackson"
+    },
+    {
+      "id": "ms_baptist",
+      "name": "Mississippi Baptist Medical Center",
+      "city": "Jackson",
+      "state": "MS",
+      "lat": 32.3150536,
+      "lng": -90.1794976,
+      "phone_reference": "(601) 968-1000",
+      "website": "https://www.baptistonline.org/locations/jackson",
+      "place_id": "ChIJwarCCvkyKIYRmwz7J9pHX_Q",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptistonline.org/locations/jackson/services/baptist-heart",
+          "note": "ACC Chest Pain Center Accreditation with Primary PCI"
+        },
+        "thrombectomy": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.mshealthcarealliance.org/systems-of-care/stroke/stroke-hospitals/",
+          "note": "MS stroke Level 2"
+        },
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptistonline.org/locations/jackson/services/maternity-and-childbirth",
+          "note": "Labor and delivery, 32-bed Level III NICU, maternal-fetal medicine specialists, statewide maternal transport",
+          "nicu_level": "III",
+          "high_risk_ob": true
+        }
+      },
+      "straight_line_miles": 84,
+      "est_road_miles": 100,
+      "est_ground_min": 130,
+      "est_air_min": 74,
+      "short_name": "MS Baptist, Jackson"
+    },
+    {
+      "id": "merit_central",
+      "name": "Merit Health Central",
+      "city": "Jackson",
+      "state": "MS",
+      "lat": 32.2876386,
+      "lng": -90.2545225,
+      "phone_reference": "(601) 376-1000",
+      "website": "https://www.merithealthcentral.com/",
+      "place_id": "ChIJnRo6KEg0KIYRxCk5YPWEwkI",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.merithealthcentral.com/our-services",
+          "note": "Interventional cardiology and angioplasty listed with critical care medicine; cath lab not named explicitly (weakest cardiac source)"
+        },
+        "thrombectomy": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.mshealthcarealliance.org/systems-of-care/stroke/stroke-hospitals/",
+          "note": "MS stroke Level 3"
+        },
+        "childbirth": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.merithealthcentral.com/maternity-care-services",
+          "note": "Delivers babies and does C-sections, but its NICU moved to another Merit hospital in 2022 (WLBT, Sep 2022), so not for high-risk births",
+          "nicu_level": "none",
+          "high_risk_ob": false
+        }
+      },
+      "straight_line_miles": 84,
+      "est_road_miles": 101,
+      "est_ground_min": 131,
+      "est_air_min": 74,
+      "short_name": "Merit Central, Jackson"
+    },
+    {
+      "id": "baptist_oxford",
+      "name": "Baptist Memorial Hospital-North Mississippi",
+      "city": "Oxford",
+      "state": "MS",
+      "lat": 34.3481541,
+      "lng": -89.5295971,
+      "phone_reference": "(662) 636-1000",
+      "website": "https://www.baptistonline.org/locations/north-mississippi",
+      "place_id": "ChIJjfmNYdx6gIgR3Sicky6a-3M",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptistonline.org/locations/north-mississippi/services",
+          "note": "Two cath labs, PTCA/stents, accredited Chest Pain Center, coronary intensive care"
+        },
+        "thrombectomy": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.mshealthcarealliance.org/systems-of-care/stroke/stroke-hospitals/",
+          "note": "MS stroke Level 3"
+        },
+        "childbirth": {
+          "value": false,
+          "verified": false,
+          "reliability": "D",
+          "source": "https://www.baptistonline.org/locations/north-mississippi/services/maternity-services",
+          "note": "Delivers babies (CMS Birthing-Friendly), but no page confirms a NICU or its level, so it is not called for high-risk births",
+          "nicu_level": null,
+          "high_risk_ob": null
+        }
+      },
+      "straight_line_miles": 89,
+      "est_road_miles": 107,
+      "est_ground_min": 138,
+      "est_air_min": 76,
+      "short_name": "Baptist N. Miss., Oxford"
+    },
+    {
+      "id": "methodist_university",
+      "name": "Methodist University Hospital",
+      "city": "Memphis",
+      "state": "TN",
+      "lat": 35.1357662,
+      "lng": -90.0195296,
+      "phone_reference": "(901) 516-7000",
+      "website": "https://www.methodisthealth.org/locations/methodist-university-hospital",
+      "place_id": "ChIJ2dXax3J-1YcRWiinKJaVkek",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.methodisthealth.org/locations/methodist-university-hospital",
+          "note": "ACC Chest Pain Center with Primary PCI; ACC cath lab accreditation Aug 2024"
+        },
+        "thrombectomy": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.methodisthealth.org/locations/methodist-university-hospital",
+          "note": "Comprehensive Stroke Center Certification"
+        },
+        "childbirth": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.methodisthealth.org/healthcare-services/womens-health/maternity/",
+          "note": "Methodist delivers babies at Germantown and Olive Branch, not at University Hospital",
+          "nicu_level": "none",
+          "high_risk_ob": false
+        }
+      },
+      "straight_line_miles": 121,
+      "est_road_miles": 146,
+      "est_ground_min": 185,
+      "est_air_min": 91,
+      "short_name": "Methodist Univ., Memphis"
+    },
+    {
+      "id": "regional_one",
+      "name": "Regional One Health",
+      "city": "Memphis",
+      "state": "TN",
+      "lat": 35.1419317,
+      "lng": -90.0318681,
+      "phone_reference": "(901) 545-7100",
+      "website": "http://www.regionalonehealth.org/",
+      "place_id": "ChIJJR6eF2R-1YcRJ8smgMQTqLA",
+      "capabilities": {
+        "trauma_level": {
+          "value": "I",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.regionalonehealth.org/main-campus/regional-medical-center/elvis-presley-trauma-center/",
+          "note": "Only Level 1 trauma center within a 150-mile radius; serves TN, MS, AR, MO"
+        },
+        "burn": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.regionalonehealth.org/firefighters-burn-center/",
+          "note": "Firefighters Burn Center, ABA-verified, only full-service burn center within 200 miles; patients age 14 and up"
+        },
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.uthsc.edu/pediatrics/fellowships/neonatal-perinatal-medicine/facilities.php",
+          "note": "Sheldon B. Korones Newborn Center: 65-bed Level III NICU, about 3,000 deliveries a year, high-risk obstetrics; Tennessee's designated West Tennessee Regional Perinatal Center (tn.gov/health/prp.html)",
+          "nicu_level": "III",
+          "high_risk_ob": true
+        }
+      },
+      "straight_line_miles": 122,
+      "est_road_miles": 146,
+      "est_ground_min": 185,
+      "est_air_min": 91,
+      "short_name": "Regional One, Memphis"
+    },
+    {
+      "id": "le_bonheur",
+      "name": "Le Bonheur Children's Hospital",
+      "city": "Memphis",
+      "state": "TN",
+      "lat": 35.1449763,
+      "lng": -90.0317165,
+      "phone_reference": "(901) 287-5437",
+      "website": "https://www.lebonheur.org/",
+      "place_id": "ChIJH_tSoP5i1YcRh7oK_i6fKpc",
+      "capabilities": {
+        "pediatric_trauma": {
+          "value": "Level I",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.lebonheur.org/services/trauma-services",
+          "note": "ACS Level I Pediatric Trauma Center; state-designated in TN, AR and MS"
+        },
+        "childbirth": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.lebonheur.org/services/neonatology",
+          "note": "Children's hospital with the region's only Level IV NICU; not a birthing hospital",
+          "nicu_level": "IV",
+          "high_risk_ob": false
+        }
+      },
+      "straight_line_miles": 122,
+      "est_road_miles": 146,
+      "est_ground_min": 185,
+      "est_air_min": 91,
+      "short_name": "Le Bonheur, Memphis"
+    },
+    {
+      "id": "nmmc_tupelo",
+      "name": "North Mississippi Medical Center-Tupelo",
+      "city": "Tupelo",
+      "state": "MS",
+      "lat": 34.2421951,
+      "lng": -88.7160609,
+      "phone_reference": "(662) 377-3000",
+      "website": "https://www.nmhs.net/Locations/North-Mississippi-Medical-Center-Tupelo",
+      "place_id": "ChIJOZY_ElJNh4gRMmoWcsD0p5Y",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.nmhs.net/medical-services/heart-and-vascular-care/conditions-we-treat/heart-attack",
+          "note": "MSDH-designated STEMI Receiving Center; emergency angioplasty"
+        },
+        "thrombectomy": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.mshealthcarealliance.org/systems-of-care/stroke/stroke-hospitals/",
+          "note": "MS stroke Level 1"
+        },
+        "trauma_level": {
+          "value": "II",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.nmhs.net/medical-services/emergency-and-trauma-care",
+          "note": "MSDH Level II Trauma Center"
+        },
+        "pediatric_trauma": {
+          "value": "Secondary",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.nmhs.net/medical-services/emergency-and-trauma-care",
+          "note": "MSDH Secondary Pediatric Trauma Center"
+        },
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.nmhs.net/medical-services/women-and-children/specialties-and-services/pregnancy-and-birth/nicu",
+          "note": "NMMC Women's Hospital: Level III NICU (34 beds), labor and delivery, high-risk pregnancy and maternal-fetal medicine",
+          "nicu_level": "III",
+          "high_risk_ob": true
+        }
+      },
+      "straight_line_miles": 123,
+      "est_road_miles": 148,
+      "est_ground_min": 188,
+      "est_air_min": 92,
+      "short_name": "NMMC, Tupelo"
+    },
+    {
+      "id": "baptist_memphis",
+      "name": "Baptist Memorial Hospital-Memphis",
+      "city": "Memphis",
+      "state": "TN",
+      "lat": 35.1291897,
+      "lng": -89.8612746,
+      "phone_reference": "(901) 226-5000",
+      "website": "https://www.baptistonline.org/locations/memphis",
+      "place_id": "ChIJz4D5XliDf4gRWdMHTcmlCFw",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptistonline.org/locations/memphis/services",
+          "note": "Baptist Heart Institute: cath labs, cardiovascular ICU, ACC Chest Pain Center, heart transplant"
+        },
+        "thrombectomy": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptistonline.org/services/stroke",
+          "note": "Joint Commission Comprehensive Stroke Center; endovascular procedures; neuro ICU"
+        },
+        "childbirth": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptistonline.org/services/maternity-childbirth",
+          "note": "Deliveries are at Baptist Memorial Hospital for Women next door, not at the adult hospital",
+          "nicu_level": "none",
+          "high_risk_ob": false
+        }
+      },
+      "straight_line_miles": 124,
+      "est_road_miles": 149,
+      "est_ground_min": 188,
+      "est_air_min": 92,
+      "short_name": "Baptist, Memphis"
+    },
+    {
+      "id": "arkansas_childrens",
+      "name": "Arkansas Children's Hospital",
+      "city": "Little Rock",
+      "state": "AR",
+      "lat": 34.7424383,
+      "lng": -92.2918223,
+      "phone_reference": "(501) 441-3453",
+      "website": "https://www.archildrens.org/",
+      "place_id": "ChIJf5Fcp1q70ocRWc9Rbm9yR9s",
+      "capabilities": {
+        "pediatric_trauma": {
+          "value": "Level 1",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.archildrens.org/programs-and-services/trauma-center",
+          "note": "ACS Level 1; only Level 1 pediatric trauma center in Arkansas"
+        },
+        "burn": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.archildrens.org/programs-and-services/burn-program",
+          "note": "Arkansas' only burn program; adults and children"
+        },
+        "childbirth": {
+          "value": false,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.archildrens.org/blog/unhealthy-pregnancy-diagnosis",
+          "note": "Arkansas' only Level IV NICU; mothers deliver at UAMS; not a birthing hospital",
+          "nicu_level": "IV",
+          "high_risk_ob": false
+        }
+      },
+      "straight_line_miles": 129,
+      "est_road_miles": 155,
+      "est_ground_min": 196,
+      "est_air_min": 95,
+      "short_name": "Arkansas Children's, Little Rock"
+    },
+    {
+      "id": "uams",
+      "name": "UAMS Medical Center",
+      "city": "Little Rock",
+      "state": "AR",
+      "lat": 34.7493145,
+      "lng": -92.3205392,
+      "phone_reference": "(501) 686-8000",
+      "website": "https://uamshealth.com/location/uams-medical-center/",
+      "place_id": "ChIJJz5GH8ql0ocRVdiOrp0tmw0",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://medicine.uams.edu/internal-medicine/divisions/cardiovascular/",
+          "note": "Dedicated cardiac ICU and catheter laboratory"
+        },
+        "thrombectomy": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://uamshealth.com/expertise/stroke-care/",
+          "note": "DNV Comprehensive Stroke Center, first in Arkansas; 24/7 clot removal"
+        },
+        "trauma_level": {
+          "value": "I",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://uamshealth.com/expertise/stroke-care/",
+          "note": "Certified Level 1 Trauma Center"
+        },
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://medicine.uams.edu/pediatrics/specialties/sections/neonatology/",
+          "note": "Level III NICU (Arkansas Department of Health list: Level III-B), 24/7 labor and delivery, maternal-fetal medicine",
+          "nicu_level": "III",
+          "high_risk_ob": true
+        }
+      },
+      "straight_line_miles": 131,
+      "est_road_miles": 157,
+      "est_ground_min": 198,
+      "est_air_min": 95,
+      "short_name": "UAMS, Little Rock"
+    },
+    {
+      "id": "chi_st_vincent",
+      "name": "CHI St. Vincent Infirmary",
+      "city": "Little Rock",
+      "state": "AR",
+      "lat": 34.7502877,
+      "lng": -92.3393435,
+      "phone_reference": "(501) 552-3000",
+      "website": "https://www.commonspirit.org/find-a-location/chi-st-vincent-infirmary-1390",
+      "place_id": "ChIJwaXYv4Gk0ocRw8HfKX5HFk0",
+      "capabilities": {
+        "trauma_level": {
+          "value": "II",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.commonspirit.org/find-a-location/chi-st-vincent-infirmary-1390",
+          "note": "Level II trauma center, 600 beds"
+        },
+        "childbirth": {
+          "value": false,
+          "verified": true,
+          "reliability": "C",
+          "source": "https://www.arkansasonline.com/news/2019/jan/16/closure-dismays-delivery-nurses-2019011/",
+          "note": "Labor and delivery closed Feb 9, 2019; NICU phased out",
+          "nicu_level": "none",
+          "high_risk_ob": false
+        }
+      },
+      "straight_line_miles": 132,
+      "est_road_miles": 158,
+      "est_ground_min": 200,
+      "est_air_min": 96,
+      "short_name": "St. Vincent, Little Rock"
+    },
+    {
+      "id": "baptist_little_rock",
+      "name": "Baptist Health Medical Center-Little Rock",
+      "city": "Little Rock",
+      "state": "AR",
+      "lat": 34.7441644,
+      "lng": -92.3812078,
+      "phone_reference": "(501) 202-2000",
+      "website": "https://www.baptist-health.org/location/baptist-health-medical-center-little-rock",
+      "place_id": "ChIJP_wGQvGm0ocRNc6fimmHOKM",
+      "capabilities": {
+        "cardiac_icu": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptist-health.org/services/heart-health/cardiology-services",
+          "note": "Cardiology/cardiovascular surgery and heart transplant on campus; interventional cardiology incl. coronary angioplasty and MI therapy"
+        },
+        "thrombectomy": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptist-health.org/location/baptist-health-medical-center-little-rock",
+          "note": "Comprehensive Stroke Center (Arkansas Dept of Health; Joint Commission Gold Seal)"
+        },
+        "trauma_level": {
+          "value": "II",
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptist-health.org/location/baptist-health-medical-center-little-rock",
+          "note": "Level II Trauma center"
+        },
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptist-health.org/center-details/labor-delivery-little-rock",
+          "note": "Delivers more babies than any Arkansas hospital; Level III-B NICU; maternal-fetal medicine and a 24/7 maternal transport team",
+          "nicu_level": "III",
+          "high_risk_ob": true
+        }
+      },
+      "straight_line_miles": 133,
+      "est_road_miles": 160,
+      "est_ground_min": 202,
+      "est_air_min": 96,
+      "short_name": "Baptist, Little Rock"
+    },
+    {
+      "id": "baptist_womens",
+      "name": "Baptist Memorial Hospital for Women",
+      "short_name": "Baptist Women's, Memphis",
+      "city": "Memphis",
+      "state": "TN",
+      "address": "6225 Humphreys Blvd, Memphis, TN 38120",
+      "lat": 35.1278304,
+      "lng": -89.8562728,
+      "coord_source": "OpenStreetMap Nominatim (OSM way 496445802)",
+      "phone_reference": null,
+      "place_id": null,
+      "website": "https://www.baptistonline.org/locations/womens",
+      "straight_line_miles": 124,
+      "est_road_miles": 149,
+      "est_ground_min": 189,
+      "est_air_min": 92,
+      "capabilities": {
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.baptistonline.org/locations/womens",
+          "note": "Largest maternity program in the Mid-South, high-risk maternity, Level III NICU; regional referral center for high-risk pregnancies",
+          "nicu_level": "III",
+          "high_risk_ob": true
+        }
+      }
+    },
+    {
+      "id": "merit_womans",
+      "name": "Merit Health Woman's Hospital",
+      "short_name": "Merit Woman's, Flowood",
+      "city": "Flowood",
+      "state": "MS",
+      "address": "1026 North Flowood Dr, Flowood, MS 39232",
+      "lat": 32.3296359,
+      "lng": -90.1014576,
+      "coord_source": "OpenStreetMap Nominatim (OSM way 485604941)",
+      "phone_reference": null,
+      "place_id": null,
+      "website": "https://www.merithealthwomanshospital.com/our-services-maternity-care",
+      "straight_line_miles": 84,
+      "est_road_miles": 101,
+      "est_ground_min": 131,
+      "est_air_min": 74,
+      "capabilities": {
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.merithealthwomanshospital.com/our-services-maternity-care",
+          "note": "Labor and delivery staffed 24/7 by obstetricians and neonatologists, Level III NICU, perinatologists for high-risk pregnancies",
+          "nicu_level": "III",
+          "high_risk_ob": true
+        }
+      }
+    },
+    {
+      "id": "bolivar_cleveland",
+      "name": "Bolivar Medical Center",
+      "short_name": "Bolivar Medical, Cleveland",
+      "city": "Cleveland",
+      "state": "MS",
+      "address": "901 E Sunflower Rd, Cleveland, MS 38732",
+      "lat": 33.748576,
+      "lng": -90.7081056,
+      "coord_source": "OpenStreetMap Nominatim (amenity=hospital)",
+      "phone_reference": null,
+      "place_id": null,
+      "website": "https://www.bolivarmedical.com/services/womens-health/labor-delivery",
+      "straight_line_miles": 20,
+      "est_road_miles": 24,
+      "est_ground_min": 39,
+      "est_air_min": 44,
+      "capabilities": {
+        "childbirth": {
+          "value": true,
+          "verified": true,
+          "reliability": "B",
+          "source": "https://www.bolivarmedical.com/services/womens-health/labor-delivery",
+          "note": "Birthing center and a Level II neonatal intensive care nursery; no maternal-fetal medicine listed; joined Lifepoint Health June 2026",
+          "nicu_level": "II",
+          "high_risk_ob": false
+        }
+      }
+    }
+  ],
+  "demo_cases": {
+    "cardiac_icu": {
+      "window": "cardiac_icu",
+      "center_ids": [
+        "delta_health",
+        "ummc",
+        "ms_baptist",
+        "merit_central",
+        "baptist_oxford",
+        "methodist_university",
+        "nmmc_tupelo",
+        "baptist_memphis",
+        "uams",
+        "baptist_little_rock"
+      ],
+      "eligibility": {
+        "delta_health": {
+          "tier": "within_target",
+          "mode": "ground"
+        },
+        "ummc": {
+          "tier": "within_target",
+          "mode": "air"
+        },
+        "ms_baptist": {
+          "tier": "within_target",
+          "mode": "air"
+        },
+        "merit_central": {
+          "tier": "within_target",
+          "mode": "air"
+        },
+        "baptist_oxford": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "methodist_university": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "nmmc_tupelo": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "baptist_memphis": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "uams": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "baptist_little_rock": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        }
+      },
+      "called_by_default": [
+        "delta_health",
+        "ummc",
+        "ms_baptist",
+        "merit_central",
+        "baptist_oxford",
+        "methodist_university",
+        "nmmc_tupelo",
+        "baptist_memphis",
+        "uams",
+        "baptist_little_rock"
+      ]
+    },
+    "stroke_thrombectomy": {
+      "window": "thrombectomy",
+      "center_ids": [
+        "ummc",
+        "st_dominic",
+        "methodist_university",
+        "nmmc_tupelo",
+        "baptist_memphis",
+        "uams",
+        "baptist_little_rock"
+      ],
+      "eligibility": {
+        "ummc": {
+          "tier": "within_target",
+          "mode": "air"
+        },
+        "st_dominic": {
+          "tier": "within_target",
+          "mode": "air"
+        },
+        "methodist_university": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "nmmc_tupelo": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "baptist_memphis": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "uams": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "baptist_little_rock": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        }
+      },
+      "called_by_default": [
+        "ummc",
+        "st_dominic",
+        "methodist_university",
+        "nmmc_tupelo",
+        "baptist_memphis",
+        "uams",
+        "baptist_little_rock"
+      ]
+    },
+    "trauma_adult": {
+      "window": "trauma",
+      "center_ids": [
+        "ummc",
+        "regional_one",
+        "nmmc_tupelo",
+        "uams",
+        "chi_st_vincent",
+        "baptist_little_rock"
+      ],
+      "eligibility": {
+        "ummc": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "regional_one": {
+          "tier": "outside",
+          "mode": "air"
+        },
+        "nmmc_tupelo": {
+          "tier": "outside",
+          "mode": "air"
+        },
+        "uams": {
+          "tier": "outside",
+          "mode": "air"
+        },
+        "chi_st_vincent": {
+          "tier": "outside",
+          "mode": "air"
+        },
+        "baptist_little_rock": {
+          "tier": "outside",
+          "mode": "air"
+        }
+      },
+      "called_by_default": [
+        "ummc"
+      ]
+    },
+    "trauma_burn": {
+      "window": "trauma",
+      "center_ids": [
+        "ummc",
+        "regional_one",
+        "arkansas_childrens"
+      ],
+      "note": "Regional One accepts age 14+; children go to Arkansas Children's or UMMC",
+      "eligibility": {
+        "ummc": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "regional_one": {
+          "tier": "outside",
+          "mode": "air"
+        },
+        "arkansas_childrens": {
+          "tier": "outside",
+          "mode": "air"
+        }
+      },
+      "called_by_default": [
+        "ummc"
+      ]
+    },
+    "trauma_pediatric": {
+      "window": "trauma",
+      "center_ids": [
+        "ummc",
+        "le_bonheur",
+        "nmmc_tupelo",
+        "arkansas_childrens"
+      ],
+      "eligibility": {
+        "ummc": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "le_bonheur": {
+          "tier": "outside",
+          "mode": "air"
+        },
+        "nmmc_tupelo": {
+          "tier": "outside",
+          "mode": "air"
+        },
+        "arkansas_childrens": {
+          "tier": "outside",
+          "mode": "air"
+        }
+      },
+      "called_by_default": [
+        "ummc"
+      ]
+    },
+    "childbirth": {
+      "window": "childbirth",
+      "center_ids": [
+        "bolivar_cleveland",
+        "delta_health",
+        "ummc",
+        "st_dominic",
+        "ms_baptist",
+        "merit_womans",
+        "regional_one",
+        "nmmc_tupelo",
+        "baptist_womens",
+        "uams",
+        "baptist_little_rock"
+      ],
+      "note": "Hospitals that deliver babies today and have a NICU (level in each capability note). Children's hospitals are excluded: they don't deliver babies.",
+      "eligibility": {
+        "bolivar_cleveland": {
+          "tier": "within_target",
+          "mode": "ground"
+        },
+        "delta_health": {
+          "tier": "within_target",
+          "mode": "ground"
+        },
+        "ummc": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "st_dominic": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "ms_baptist": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "merit_womans": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "regional_one": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "nmmc_tupelo": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "baptist_womens": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "uams": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        },
+        "baptist_little_rock": {
+          "tier": "within_hard_max",
+          "mode": "air"
+        }
+      },
+      "called_by_default": [
+        "bolivar_cleveland",
+        "delta_health",
+        "ummc",
+        "st_dominic",
+        "ms_baptist",
+        "merit_womans",
+        "regional_one",
+        "nmmc_tupelo",
+        "baptist_womens",
+        "uams",
+        "baptist_little_rock"
+      ]
+    }
+  },
+  "eligibility_rule": "within_target: reachable inside the specialty's transport budget. within_hard_max: reachable inside the survival window (air recommended when ground is not). outside: beyond the window; called only when nothing else answers, and flagged to the physician."
+}

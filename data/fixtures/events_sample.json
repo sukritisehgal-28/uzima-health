@@ -1,0 +1,24 @@
+{
+  "case": "cardiac_icu",
+  "events": [
+    {"type": "call_started", "agent_id": "A1", "hospital_id": "delta_health", "at": "2026-09-26T21:00:00Z", "data": {}},
+    {"type": "call_started", "agent_id": "A2", "hospital_id": "ummc", "at": "2026-09-26T21:00:00Z", "data": {}},
+    {"type": "call_started", "agent_id": "A3", "hospital_id": "ms_baptist", "at": "2026-09-26T21:00:00Z", "data": {}},
+    {"type": "call_answered", "agent_id": "A1", "hospital_id": "delta_health", "at": "2026-09-26T21:00:08Z", "data": {}},
+    {"type": "answer_recorded", "agent_id": "A1", "hospital_id": "delta_health", "at": "2026-09-26T21:00:41Z", "data": {"bed": true, "ready_in_min": 10, "reason": null}},
+    {"type": "call_ended", "agent_id": "A1", "hospital_id": "delta_health", "at": "2026-09-26T21:00:44Z", "data": {"outcome": "available"}},
+    {"type": "call_answered", "agent_id": "A2", "hospital_id": "ummc", "at": "2026-09-26T21:00:15Z", "data": {}},
+    {"type": "answer_recorded", "agent_id": "A2", "hospital_id": "ummc", "at": "2026-09-26T21:00:35Z", "data": {"bed": false, "ready_in_min": null, "reason": "no cardiac ICU bed"}},
+    {"type": "call_ended", "agent_id": "A2", "hospital_id": "ummc", "at": "2026-09-26T21:00:36Z", "data": {"outcome": "declined"}},
+    {"type": "call_ended", "agent_id": "A3", "hospital_id": "ms_baptist", "at": "2026-09-26T21:00:30Z", "data": {"outcome": "no_answer"}}
+  ],
+  "results": [
+    {"agent_id": "A1", "hospital_id": "delta_health", "hospital": "Delta Health System-The Medical Center", "lat": 33.4106927, "lng": -91.0352789, "status": "available", "ready_in_min": 10, "decline_reason": null,
+     "transport": {"est_ground_min": 42, "est_air_min": 45, "recommended_mode": "ground", "tier": "within_target"}, "treatment_start_min": 52,
+     "transcript": [{"speaker": "agent", "text": "Do you have a cardiac ICU bed and a cath lab team available right now?", "at": "2026-09-26T21:00:20Z"}, {"speaker": "hospital", "text": "Yes, ready in about 10 minutes.", "at": "2026-09-26T21:00:40Z"}], "answered_at": "2026-09-26T21:00:44Z"},
+    {"agent_id": "A2", "hospital_id": "ummc", "hospital": "University of Mississippi Medical Center", "lat": 32.3303534, "lng": -90.1728317, "status": "declined", "ready_in_min": null, "decline_reason": "no cardiac ICU bed",
+     "transport": {"est_ground_min": 129, "est_air_min": 73, "recommended_mode": "air", "tier": "within_target"}, "treatment_start_min": null, "transcript": [], "answered_at": "2026-09-26T21:00:36Z"},
+    {"agent_id": "A3", "hospital_id": "ms_baptist", "hospital": "Mississippi Baptist Medical Center", "lat": 32.3150536, "lng": -90.1794976, "status": "no_answer", "ready_in_min": null, "decline_reason": null,
+     "transport": {"est_ground_min": 130, "est_air_min": 74, "recommended_mode": "air", "tier": "within_target"}, "treatment_start_min": null, "transcript": [], "answered_at": "2026-09-26T21:00:30Z"}
+  ]
+}

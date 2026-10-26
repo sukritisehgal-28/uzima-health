@@ -1,0 +1,11 @@
+# Fallback if EKS eats the day: run the same agent image on App Runner (or one EC2 box) and fan out with asyncio.
+version: 1.0
+runtime: python3
+build:
+  commands:
+    build:
+      - pip install -r services/agent/requirements.txt
+run:
+  command: python -m scripts.run_local_swarm cardiac_icu
+  network:
+    port: 8080

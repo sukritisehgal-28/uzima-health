@@ -1,0 +1,247 @@
+{
+  "_note": "FICTIONAL demo patients, one per case type. The handoff service fills empty handoff fields from here so the demo record is complete; anything the clinician enters wins. Times are minutes before the record is built.",
+  "cardiac_icu": {
+    "weight_kg": 88,
+    "key_scores": {
+      "Chest pain": "6/10"
+    },
+    "vitals": {
+      "Heart rate": "104 /min",
+      "Blood pressure": "132/84 mmHg",
+      "SpO2": "95% on room air",
+      "Respiratory rate": "20 /min",
+      "Temperature": "36.9 °C"
+    },
+    "vitals_min_ago": 6,
+    "imaging_or_ecg": "12-lead ECG: ST elevation in V1 to V4 (anterior STEMI)",
+    "labs": {
+      "Troponin I": "2.8 ng/mL (high)",
+      "Potassium": "4.1 mmol/L",
+      "Creatinine": "1.1 mg/dL"
+    },
+    "treatment_given": [
+      {
+        "what": "Aspirin 324 mg chewed",
+        "min_ago": 24
+      },
+      {
+        "what": "Heparin 4,000 units IV bolus",
+        "min_ago": 18
+      },
+      {
+        "what": "Nitroglycerin 0.4 mg under the tongue",
+        "min_ago": 15
+      }
+    ],
+    "response_to_treatment": "Chest pain down from 8/10 to 6/10 after nitroglycerin; blood pressure stable.",
+    "allergies": "No known drug allergies",
+    "pending": [
+      "Repeat ECG in 15 minutes",
+      "Second troponin due 3 hours after the first"
+    ],
+    "certification": "Needs emergency PCI (cath lab), which this hospital does not have. The expected benefits of transfer outweigh the risks of transport.",
+    "consent": "Patient agreed to the transfer after the risks and benefits were explained."
+  },
+  "stroke_thrombectomy": {
+    "weight_kg": 79,
+    "key_scores": {
+      "NIHSS": 18
+    },
+    "vitals": {
+      "Heart rate": "88 /min",
+      "Blood pressure": "176/94 mmHg",
+      "SpO2": "97% on room air",
+      "Respiratory rate": "16 /min",
+      "Temperature": "36.7 °C"
+    },
+    "vitals_min_ago": 5,
+    "imaging_or_ecg": "CT head: no bleeding. CT angiogram: left M1 (middle cerebral artery) blockage",
+    "labs": {
+      "Glucose": "132 mg/dL",
+      "INR": "1.0",
+      "Platelets": "240 x10^9/L"
+    },
+    "treatment_given": [
+      {
+        "what": "Labetalol 10 mg IV for blood pressure",
+        "min_ago": 32
+      },
+      {
+        "what": "Tenecteplase 0.25 mg/kg IV bolus (clot-dissolving drug)",
+        "min_ago": 20
+      }
+    ],
+    "response_to_treatment": "Right arm weakness unchanged; speech slightly clearer.",
+    "allergies": "Penicillin (rash)",
+    "pending": [
+      "Neuro checks every 15 minutes",
+      "Keep blood pressure below 180/105 after the clot-dissolving drug"
+    ],
+    "certification": "Needs thrombectomy (clot removal), which this hospital does not have. The expected benefits of transfer outweigh the risks of transport.",
+    "consent": "Spouse agreed on the patient's behalf after the risks and benefits were explained."
+  },
+  "trauma_adult": {
+    "weight_kg": 82,
+    "key_scores": {
+      "GCS": 13
+    },
+    "vitals": {
+      "Heart rate": "118 /min",
+      "Blood pressure": "96/58 mmHg",
+      "SpO2": "94% on oxygen",
+      "Respiratory rate": "24 /min",
+      "Temperature": "36.2 °C"
+    },
+    "vitals_min_ago": 4,
+    "imaging_or_ecg": "FAST ultrasound: fluid in the abdomen. Chest X-ray: left rib fractures",
+    "labs": {
+      "Hemoglobin": "10.2 g/dL",
+      "Lactate": "3.8 mmol/L"
+    },
+    "treatment_given": [
+      {
+        "what": "Pelvic binder applied",
+        "min_ago": 30
+      },
+      {
+        "what": "2 units O-negative red blood cells",
+        "min_ago": 25
+      },
+      {
+        "what": "Tranexamic acid 1 g IV",
+        "min_ago": 22
+      }
+    ],
+    "response_to_treatment": "Heart rate down from 132 to 118; blood pressure up from 84/50 to 96/58.",
+    "allergies": "No known drug allergies",
+    "pending": [
+      "CT scan not done (patient unstable)",
+      "Type and crossmatch sent"
+    ],
+    "certification": "Needs a Level I trauma team and emergency surgery. The expected benefits of transfer outweigh the risks of transport.",
+    "consent": "Patient agreed to the transfer after the risks and benefits were explained."
+  },
+  "trauma_burn": {
+    "weight_kg": 76,
+    "key_scores": {
+      "Burn size": "32% of body surface"
+    },
+    "vitals": {
+      "Heart rate": "112 /min",
+      "Blood pressure": "128/80 mmHg",
+      "SpO2": "96% on oxygen",
+      "Respiratory rate": "22 /min",
+      "Temperature": "36.4 °C"
+    },
+    "vitals_min_ago": 5,
+    "imaging_or_ecg": "Airway check: singed nasal hair and a hoarse voice",
+    "labs": {
+      "Carboxyhemoglobin": "8%"
+    },
+    "treatment_given": [
+      {
+        "what": "Burns covered with clean, dry dressings",
+        "min_ago": 35
+      },
+      {
+        "what": "Lactated Ringer's IV at 500 mL per hour",
+        "min_ago": 40
+      },
+      {
+        "what": "Fentanyl 50 mcg IV for pain",
+        "min_ago": 20
+      }
+    ],
+    "response_to_treatment": "Pain down from 9/10 to 5/10; urine output 40 mL in the last hour.",
+    "allergies": "Sulfa drugs (hives)",
+    "pending": [
+      "Watch voice and breathing: may need a breathing tube",
+      "Measure urine output every hour"
+    ],
+    "certification": "Needs a burn center. The expected benefits of transfer outweigh the risks of transport.",
+    "consent": "Patient agreed to the transfer after the risks and benefits were explained."
+  },
+  "trauma_pediatric": {
+    "weight_kg": 26,
+    "key_scores": {
+      "Pediatric GCS": 14
+    },
+    "vitals": {
+      "Heart rate": "128 /min",
+      "Blood pressure": "98/62 mmHg",
+      "SpO2": "97% on room air",
+      "Respiratory rate": "26 /min",
+      "Temperature": "36.8 °C"
+    },
+    "vitals_min_ago": 5,
+    "imaging_or_ecg": "X-ray: closed left thigh bone (femur) fracture",
+    "labs": {
+      "Hemoglobin": "11.0 g/dL"
+    },
+    "treatment_given": [
+      {
+        "what": "Splint to the left thigh",
+        "min_ago": 30
+      },
+      {
+        "what": "Normal saline 20 mL/kg IV",
+        "min_ago": 25
+      },
+      {
+        "what": "Morphine 2.5 mg IV for pain",
+        "min_ago": 20
+      }
+    ],
+    "response_to_treatment": "Pain down from 8/10 to 4/10; heart rate down from 140 to 128.",
+    "allergies": "No known drug allergies",
+    "pending": [
+      "Parent is traveling with the patient",
+      "Orthopedic surgery review on arrival"
+    ],
+    "certification": "Needs a pediatric trauma center. The expected benefits of transfer outweigh the risks of transport.",
+    "consent": "Parent agreed to the transfer after the risks and benefits were explained."
+  },
+  "childbirth": {
+    "weight_kg": 78,
+    "key_scores": {
+      "Gestational age": "34 weeks"
+    },
+    "vitals": {
+      "Heart rate": "104 /min",
+      "Blood pressure": "168/110 mmHg",
+      "SpO2": "97% on room air",
+      "Respiratory rate": "18 /min",
+      "Temperature": "36.8 °C"
+    },
+    "vitals_min_ago": 5,
+    "imaging_or_ecg": "Fetal monitoring: single baby, head down, heart rate in the 140s, reassuring pattern",
+    "labs": {
+      "Platelets": "96 x10^9/L (low)",
+      "AST": "88 U/L (high)",
+      "Urine protein": "3+"
+    },
+    "treatment_given": [
+      {
+        "what": "Magnesium sulfate 4 g IV loading dose, then 2 g per hour",
+        "min_ago": 35
+      },
+      {
+        "what": "Labetalol 20 mg IV for blood pressure",
+        "min_ago": 30
+      },
+      {
+        "what": "Betamethasone 12 mg IM (steroid for the baby's lungs)",
+        "min_ago": 25
+      }
+    ],
+    "response_to_treatment": "Blood pressure down from 176/114 to 168/110; no seizure; baby's heart rate reassuring.",
+    "allergies": "No known drug allergies",
+    "pending": [
+      "Continuous fetal heart monitoring",
+      "Check magnesium level and reflexes every hour",
+      "Second betamethasone dose due in 24 hours"
+    ],
+    "certification": "Needs high-risk obstetric care with emergency C-section capability and a NICU for a 34-week baby. The expected benefits of transfer outweigh the risks of transport.",
+    "consent": "Patient agreed to the transfer after the risks and benefits were explained."
+  }
+}

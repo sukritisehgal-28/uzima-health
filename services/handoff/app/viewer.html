@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src *">
+<title>Patient handoff record</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #f7f6f3; --panel: #fff; --text: #0a0b0d; --muted: #5f636b; --faint: #8e9197; --line: #e4e2dc; --gold: #f0c06a; --gold-ink: #8a5d0b;
+          --ok: #1e8a4c; --no: #c2412f; --wait: #a86a06;
+          --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  main { max-width: 640px; margin: 0 auto; padding: 20px 16px 40px; }
+  .brand { font-weight: 600; font-size: 20px; letter-spacing: -.03em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 2px 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 12px 0; box-shadow: 0 1px 2px rgba(10, 11, 13, .04); }
+  h1 { font-size: 24px; font-weight: 600; letter-spacing: -.03em; line-height: 1.2; margin: 4px 0; }
+  h2 { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 0 0 10px; }
+  #unlock h2 { color: var(--gold-ink); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 7px 16px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; font-weight: 500; }
+  form { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  input { font-family: var(--mono); font-size: 20px; letter-spacing: .2em; width: 9.5ch; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
+  input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+  button { font: inherit; font-weight: 600; padding: 10px 20px; border: 0; border-radius: 999px; background: var(--text); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  .err { color: var(--no); min-height: 1.2em; }
+  .call { border-top: 1px solid var(--line); padding: 9px 0; }
+  .call:first-of-type { border-top: 0; }
+  .yes { color: var(--ok); }
+  .no { color: var(--no); }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .line { font-size: 13px; margin: 4px 0; }
+  .who { color: var(--muted); }
+  .list { margin: 0 0 8px; padding-left: 18px; }
+  .list li { margin: 3px 0; }
+  footer { color: var(--faint); font-family: var(--mono); font-size: 11px; margin-top: 20px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">Project Uzima</div>
+  <div class="sub">Patient handoff record · encrypted SMART Health Link</div>
+
+  <section id="unlock" class="card hidden">
+    <h2>Enter the passcode</h2>
+    <form id="form">
+      <input id="pass" inputmode="numeric" autocomplete="one-time-code" maxlength="12" aria-label="Passcode" required>
+      <button id="go">Open record</button>
+    </form>
+    <div class="sub">The passcode was read to you on the transfer call.</div>
+    <div id="err" class="err" role="alert"></div>
+  </section>
+
+  <section id="msg" class="card hidden"></section>
+  <div id="record" class="hidden"></div>
+  <footer id="foot"></footer>
+</main>
+<script>
+"use strict";
+// SMART Health Links viewer: the link (manifest URL + key) is in the URL fragment, which browsers never send to a
+// server. The passcode goes to the manifest server; the file comes back encrypted and is decrypted here.
+const $ = (id) => document.getElementById(id);
+const utf8 = (bytes) => new TextDecoder().decode(bytes);
+
+function el(tag, attrs, ...kids) {      // textContent only, so record data can never become markup
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) k === "class" ? (e.className = v) : e.setAttribute(k, v);
+  for (const k of kids.flat()) if (k != null && k !== false && k !== "") e.append(k instanceof Node ? k : String(k));
+  return e;
+}
+function b64u(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(s + "=".repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+}
+function show(id) { for (const s of ["unlock", "msg", "record"]) $(s).classList.toggle("hidden", s !== id); }
+function message(title, body) { $("msg").replaceChildren(el("h2", {}, title), el("div", {}, body)); show("msg"); }
+const cap = (s) => (s ? String(s)[0].toUpperCase() + String(s).slice(1) : s);
+let ZONE;   // the hospitals' time zone from the record, so every time on the page reads the same way
+function when(v) {
+  const d = new Date(v);
+  return isNaN(d) ? v : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short", ...(ZONE ? { timeZone: ZONE } : {}) });
+}
+
+function parseLink() {
+  const i = location.href.indexOf("shlink:/");
+  if (i < 0) return null;
+  try { return JSON.parse(utf8(b64u(location.href.slice(i + 8)))); } catch { return null; }
+}
+
+async function decrypt(jwe, keyB64) {   // compact JWE, alg "dir", enc "A256GCM", optional zip "DEF"
+  const [h, , iv, ct, tag] = jwe.trim().split(".");
+  const header = JSON.parse(utf8(b64u(h)));
+  const key = await crypto.subtle.importKey("raw", b64u(keyB64), "AES-GCM", false, ["decrypt"]);
+  const c = b64u(ct), t = b64u(tag), data = new Uint8Array(c.length + t.length);
+  data.set(c); data.set(t, c.length);
+  let plain = new Uint8Array(await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: b64u(iv), additionalData: new TextEncoder().encode(h), tagLength: 128 }, key, data));
+  if (header.zip === "DEF") {
+    const inflated = new Blob([plain]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    plain = new Uint8Array(await new Response(inflated).arrayBuffer());
+  }
+  return JSON.parse(utf8(plain));
+}
+
+async function openRecord(link, passcode) {
+  const res = await fetch(link.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" },
+    body: JSON.stringify(passcode ? { recipient: "Receiving team", passcode } : { recipient: "Receiving team" }),
+  });
+  if (res.status === 401) {
+    const b = await res.json().catch(() => ({}));
+    const left = b.remainingAttempts;
+    if (left === 0) throw Object.assign(new Error("Too many wrong passcodes. This link is now locked."), { final: true });
+    throw new Error(`Wrong passcode.${left != null ? ` ${left} ${left === 1 ? "try" : "tries"} left.` : ""}`);
+  }
+  if (res.status === 404) throw Object.assign(new Error("This record has expired, was locked, or no longer exists."), { final: true });
+  if (!res.ok) throw new Error(`The record server answered ${res.status}. Try again.`);
+  const files = (await res.json()).files || [];
+  const file = files.find((f) => (f.contentType || "").startsWith("application/fhir+json")) || files[0];
+  if (!file) throw Object.assign(new Error("The record is empty."), { final: true });
+  const jwe = file.embedded || (await (await fetch(file.location)).text());
+  return decrypt(jwe, link.key);
+}
+
+const STATUS = { available: "Available", declined: "Declined", no_answer: "No answer", callback_requested: "Asked for a call back",
+                 accepted: "Accepted", released: "Released", held: "Held", calling: "Calling" };
+
+function card(title, ...kids) { return el("section", { class: "card" }, el("h2", {}, title), ...kids); }
+function dl(rows) {
+  const d = el("dl");
+  for (const [k, v] of rows) if (v != null && v !== "") d.append(el("dt", {}, k), el("dd", {}, v));
+  return d;
+}
+
+function callRow(c, acceptedId) {
+  const status = c.hospital_id === acceptedId ? "accepted" : c.status;
+  const yes = status === "available" || status === "accepted";
+  const detail = yes ? (c.ready_in_min != null ? `ready in ${c.ready_in_min} min` : "") : c.decline_reason || "";
+  const lines = (c.transcript || []).map((l) =>
+    el("div", { class: "line" }, el("span", { class: "who" }, l.speaker === "agent" ? "Agent: " : "Hospital: "), l.text));
+  return el("div", { class: "call" },
+    el("div", {}, el("strong", {}, c.hospital), " · ",
+      el("span", { class: yes ? "yes" : status === "declined" ? "no" : "" }, STATUS[status] || status), detail ? ` · ${detail}` : ""),
+    lines.length ? el("details", {}, el("summary", {}, "Transcript"), lines) : null);
+}
+
+function render(bundle, link) {
+  const res = (bundle.entry || []).map((e) => e.resource || {});
+  const all = (t) => res.filter((r) => r.resourceType === t);
+  const comp = all("Composition")[0] || {};
+  const section = (title) => (comp.section || []).find((s) => s.title === title) || {};
+  const emptyReason = (title) => cap((section(title).emptyReason || {}).text);
+  const patient = all("Patient")[0] || {};
+  const age = ((patient.extension || []).find((x) => /age/.test(x.url || "")) || {}).valueInteger;
+  const cond = all("Condition")[0] || {};
+
+  let transfer = {};
+  try { transfer = JSON.parse(section("Transfer").text.div.replace(/^<div[^>]*>/, "").replace(/<\/div>\s*$/, "")); } catch {}
+  ZONE = transfer.tz || undefined;
+  const calls = transfer.calls || [];
+  const accepted = calls.find((c) => c.hospital_id === transfer.accepted_hospital_id) || {};
+  const tr = transfer.transport || {};
+  const travel = tr.recommended_mode === "ground" ? tr.est_ground_min : tr.est_air_min;
+
+  const meds = all("MedicationStatement").map((m) => (m.medicationCodeableConcept || {}).text).filter(Boolean);
+  const allergies = all("AllergyIntolerance").map((a) => (a.code || {}).text).filter(Boolean);
+  const dx = all("DiagnosticReport")[0];
+  const cov = all("Coverage")[0];
+  const category = (o) => (((o.category || [])[0] || {}).text) || "score";
+  const obsValue = (o) => (o.valueQuantity || {}).value ?? o.valueString;
+  const obsRow = (o) => [(o.code || {}).text, obsValue(o)];
+  const observations = all("Observation");
+  const vitals = observations.filter((o) => category(o) === "vital-signs");
+  const labs = observations.filter((o) => category(o) === "laboratory");
+  const scores = observations.filter((o) => category(o) === "score");
+  const vitalsAt = (vitals.find((o) => o.effectiveDateTime) || {}).effectiveDateTime;
+
+  const out = [
+    el("section", { class: "card" },
+      el("div", { class: "sub" }, [age != null ? `${age}-year-old` : "", patient.gender || ""].join(" ").trim()),
+      el("h1", {}, (cond.code || {}).text || comp.title || "Transfer patient"),
+      cond.onsetDateTime ? el("div", { class: "sub" }, `Onset or last known well: ${when(cond.onsetDateTime)}`) : null,
+      (transfer.demo_details || []).length ? el("div", { class: "sub" }, "Fictional demo patient") : null),
+    card("Transfer", dl([
+      ["Receiving", accepted.hospital || transfer.accepted_hospital_id],
+      ["Accepted by", transfer.accepting_physician],
+      ["Transport", tr.recommended_mode ? `${cap(tr.recommended_mode)}, about ${travel} min (ground ${tr.est_ground_min}, air ${tr.est_air_min})` : null],
+      ["Crew", transfer.crew],
+      ["Team ready in", accepted.ready_in_min != null ? `${accepted.ready_in_min} min` : null],
+      ["Treatment in", accepted.treatment_start_min != null ? `about ${accepted.treatment_start_min} min` : null],
+    ])),
+    vitals.length ? card("Vital signs", dl(vitals.map(obsRow)), vitalsAt ? el("div", { class: "sub" }, `Taken ${when(vitalsAt)}`) : null) : null,
+    (transfer.treatment_given || []).length ? card("Treatment given",
+      el("ul", { class: "list" }, transfer.treatment_given.map((t) => el("li", {}, t))),
+      transfer.response_to_treatment ? dl([["Response", transfer.response_to_treatment]]) : null) : null,
+    card("Results", dl([["ECG / imaging", dx && dx.conclusion], ...labs.map(obsRow), ...scores.map(obsRow)])),
+    card("Medications and allergies", dl([
+      ["Medications", meds.length ? meds.join(", ") : emptyReason("Medication Summary") || "None recorded"],
+      ["Allergies", allergies.length ? allergies.join(", ") : emptyReason("Allergies and Intolerances") || "None recorded"],
+    ])),
+    (transfer.pending || []).length ? card("Still to do", el("ul", { class: "list" }, transfer.pending.map((t) => el("li", {}, t)))) : null,
+    transfer.certification || transfer.consent ? card("Certification and consent", dl([
+      ["Certified by", transfer.certification && transfer.certification.by],
+      ["Reason", transfer.certification && transfer.certification.summary],
+      ["Consent", transfer.consent],
+    ])) : null,
+    cov ? card("Insurance", dl([
+      ["Payer", ((cov.payor || [])[0] || {}).display],
+      ["Member ID", cov.subscriberId],
+      ["Status", cov.status === "active" ? "Active" : cap(cov.status)],
+      ["Plan", ((cov.class || [])[0] || {}).value],
+    ])) : null,
+    calls.length ? card(`Every hospital called (${calls.length})`, calls.map((c) => callRow(c, transfer.accepted_hospital_id))) : null,
+  ].filter(Boolean);
+
+  $("record").replaceChildren(...out);
+  $("foot").textContent = "Decrypted on this device; the key stays in the link." + (link.exp ? ` The link expires ${when(link.exp * 1000)}.` : "");
+  show("record");
+}
+
+async function unlock(link, passcode) {
+  $("err").textContent = "";
+  $("go").disabled = true;
+  try { render(await openRecord(link, passcode), link); }
+  catch (e) {
+    if (e.final) message("Can't open this record", e.message);
+    else if (e.name === "OperationError") message("Can't open this record", "The link is damaged or incomplete.");
+    else $("err").textContent = e.message || "Could not reach the record server.";
+  } finally { $("go").disabled = false; }
+}
+
+window.addEventListener("hashchange", () => location.reload());   // a new link opened in the same tab
+const link = parseLink();
+if (!link || !link.url || !link.key) message("No record link", "Open this page from the handoff QR code or link.");
+else if (!window.crypto || !crypto.subtle) message("Open over https", "This browser only decrypts records on a secure (https) address.");
+else if (link.exp && link.exp * 1000 < Date.now()) message("Link expired", "This handoff link has expired.");
+else if (!(link.flag || "").includes("P")) unlock(link);
+else {
+  show("unlock");
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); unlock(link, $("pass").value.trim()); });
+  $("pass").focus();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# One Job per hospital. The orchestrator fills AGENT_HEADER; nothing else changes between clones.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: project-uzima-agent-
+  namespace: project-uzima
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: agent
+          image: project-uzima/agent:latest
+          env:
+            - name: AGENT_HEADER
+              value: '{"agent_id":"A1","hospital":"","phone":"","lat":0,"lng":0,"live":false}'
+          envFrom:
+            - secretRef:
+                name: project-uzima-secrets
