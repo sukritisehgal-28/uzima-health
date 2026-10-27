@@ -4,7 +4,8 @@ export const WS = import.meta.env.VITE_COLLECTOR_WS ?? "ws://localhost:8003/stre
 export const MAP_STYLE = import.meta.env.VITE_MAP_STYLE ?? "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 
 export type Transport = { est_ground_min: number; est_air_min: number; recommended_mode: "ground" | "air"; tier: string };
-export type Agent = { agent_id: string; hospital_id: string; hospital: string; lat: number; lng: number; live: boolean; transport: Transport };
+export type Agent = { agent_id: string; hospital_id: string; hospital: string; lat: number; lng: number; live: boolean; transport: Transport;
+  capability_question?: string };   // what the agent asks this hospital's transfer desk
 export type Card = Agent & { status: string; ready_in_min?: number | null; decline_reason?: string | null; treatment_start_min?: number | null; last_line?: string; source?: "live" | "simulated"; error?: string };
 /** Transfer ticket created on Connect: the patient's pass for the transfer (web page + optional Apple Wallet). Its QR code opens the encrypted record. */
 export type Ticket = {

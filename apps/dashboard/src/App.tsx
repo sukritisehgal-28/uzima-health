@@ -260,10 +260,11 @@ export default function App() {
         </div>
         </div>
         {/* Popups: the visitor's own call, then the two doctor calls after Connect. */}
-        <div className="pointer-events-none absolute bottom-[5.5rem] right-3 flex w-[min(21rem,calc(100%-1.5rem))] flex-col items-stretch gap-2">
+        <div className="pointer-events-none absolute bottom-[5.5rem] right-3 flex w-[min(21rem,calc(100%-1.5rem))] flex-col items-stretch gap-2 md:bottom-10 md:right-14">
           {callNote && <Popup title="Simulated search" onClose={() => setCallNote(undefined)}><p>{callNote}</p></Popup>}
           {visitorCard && !twin && !ended && <VisitorCall card={visitorCard} canConnect={!!rec} />}
-          {twin && doctorPopup && bridgeStatus && <DoctorCall status={bridgeStatus} simulated={bridgeMode !== "live"} onClose={() => setDoctorPopup(false)} />}
+          {twin && doctorPopup && bridgeStatus && <DoctorCall status={bridgeStatus} simulated={bridgeMode !== "live"} ticket={twin.ticket}
+            desk={list.find((c) => c.status === "accepted")} onClose={() => setDoctorPopup(false)} />}
         </div>
       </section>
 
@@ -407,10 +408,34 @@ function CallMePopup({ callerId, phone, setPhone, onCall, onSkip, onCancel }: {
 
 /** A floating card over the map. */
 function Popup({ title, tone, tag, onClose, children }: { title: string; tone?: "yes" | "no"; tag?: string; onClose?: () => void; children: React.ReactNode }) {
+  // Drag anywhere on the map by any spot that isn't a button or link; it stays inside the map.
+  const ref = useRef<HTMLElement>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [side, setSide] = useState<"left" | "right">("left");   // which side a row's note opens on (md and up)
+  const drag = useRef<{ x: number; y: number; px: number; py: number; id: number }>();
+  const onDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button, a, input, [role=note]")) return;
+    drag.current = { x: e.clientX, y: e.clientY, px: pos.x, py: pos.y, id: e.pointerId };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent<HTMLElement>) => {
+    const d = drag.current, el = ref.current, area = el?.parentElement?.parentElement;
+    if (!d || d.id !== e.pointerId || !el || !area) return;
+    const r = el.getBoundingClientRect(), m = area.getBoundingClientRect(), pad = 8;
+    const baseLeft = r.left - pos.x, baseTop = r.top - pos.y;   // where it sits without the drag offset
+    const x = Math.min(Math.max(d.px + e.clientX - d.x, m.left + pad - baseLeft), m.right - pad - r.width - baseLeft);
+    const y = Math.min(Math.max(d.py + e.clientY - d.y, m.top + pad - baseTop), m.bottom - pad - r.height - baseTop);
+    setPos({ x, y });
+    setSide(baseLeft + x - m.left < 320 ? "right" : "left");
+  };
+  const onUp = (e: React.PointerEvent<HTMLElement>) => { if (drag.current?.id === e.pointerId) drag.current = undefined; };
   return (
-    <section data-map-overlay aria-label={title} aria-live="polite"
-      className="pointer-events-auto rounded-xl border border-ink-line bg-ink-panel px-3.5 py-3 text-xs text-ink-muted shadow-md">
+    <section ref={ref} data-map-overlay data-side={side} aria-label={title} aria-live="polite"
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+      style={{ transform: `translate(${pos.x}px, ${pos.y}px)`, touchAction: "none" }}
+      className="group pointer-events-auto relative cursor-grab select-none rounded-xl border border-ink-line bg-ink-panel px-3.5 py-3 text-xs text-ink-muted shadow-md active:cursor-grabbing">
       <div className="flex items-start gap-2">
+        <span aria-hidden title="Drag to move" className="-ml-1 mt-0.5 select-none text-[11px] leading-none tracking-[-2px] text-ink-muted/70">⋮⋮</span>
         <h2 className={`text-sm font-semibold ${tone === "yes" ? "text-st-yes" : tone === "no" ? "text-st-no" : "text-ink-text"}`}>{title}</h2>
         {onClose && <button onClick={onClose} aria-label="Close" className="-mr-1 -mt-0.5 ml-auto rounded px-1 text-base leading-none text-ink-muted hover:text-ink-text">×</button>}
       </div>
@@ -437,30 +462,59 @@ function VisitorCall({ card, canConnect }: { card: Card; canConnect: boolean }) 
       ? " Press Connect doctors below to see the doctor calls." : " The recommendation appears below in a moment."}</p></Popup>;
 }
 
-/** The doctor-to-doctor call after Connect: the accepting doctor hears the summary first, then the referring doctor joins. */
-function DoctorCall({ status, simulated, onClose }: { status?: string; simulated: boolean; onClose: () => void }) {
+/** The calls behind a transfer, after Connect: the hospital's transfer desk (already done), then the accepting doctor
+ *  hears the summary and the referring doctor joins. Each row opens a short note on what that call is and says. */
+function DoctorCall({ status, simulated, ticket, desk, onClose }: {
+  status?: string; simulated: boolean; ticket?: Ticket; desk?: Card; onClose: () => void }) {
+  const [open, setOpen] = useState<string>();
   const steps = ["calling_accepting_doctor", "calling_sending_doctor", "connected", "ended"];
   const step = status === "initiated" ? 0 : steps.indexOf(status ?? "");
   if (step < 0 && status !== "failed") return null;
   const failed = status === "failed";
   const title = failed ? "Doctor connection failed" : step === 3 ? "Doctor call ended" : step === 2 ? "Doctors connected · one call" : "Connecting doctors";
-  const rows: [string, string, "wait" | "ring" | "done"][] = [
-    ["Accepting doctor", step === 0 ? "Ringing · hears the referral summary first" : step === 3 ? "Call ended" : "Heard the summary", step === 0 ? "ring" : "done"],
-    ["Referring doctor", step < 1 ? "Joins after the summary" : step === 1 ? "Ringing" : step === 3 ? "Call ended" : "Joined the call", step < 1 ? "wait" : step === 1 ? "ring" : "done"],
+  const receiving = ticket?.to.name ?? desk?.hospital ?? "the receiving hospital";
+  const sending = ticket?.from.name ?? "the sending hospital";
+  const ready = ticket?.ready_in_min ?? desk?.ready_in_min;
+  const byVisitor = desk?.source === "live";
+  const travel = ticket ? ` Arriving by ${ticket.mode} in about ${ticket.travel_min} minutes.` : "";
+  const rows: { who: string; what: string; state: "wait" | "ring" | "done"; about: React.ReactNode }[] = [
+    { who: "Transfer desk", state: "done",
+      what: `${byVisitor ? "You said yes" : "Said yes"}${ready != null ? ` · ready in ${ready} min` : ""}`,
+      about: <>The first call. The AI agent phones the transfer desk at <b className="font-medium text-ink-text">{receiving}</b>, says it is an AI, and asks: <i>“{desk?.capability_question ?? "Do you have a bed and a team available right now?"}”</i> If yes, it asks how many minutes until they're ready, reads the answer back, and counts it only after the desk says yes. {byVisitor ? "You answered this call." : "In this run the desk's answer is simulated."}</> },
+    { who: "Accepting doctor", state: step === 0 ? "ring" : "done",
+      what: step === 0 ? "Ringing · hears the referral summary first" : step === 3 ? "Call ended" : "Heard the summary",
+      about: <>The doctor at <b className="font-medium text-ink-text">{receiving}</b> who takes over the patient's care. The agent calls them first and reads the referral summary: <i>“This is the Uzima assistant with the referral summary. {ticket ? `${ticket.patient}, ${ticket.condition}.` : "The patient's age and condition."}{travel} The transfer ticket with the full record travels with the patient.”</i> Then it connects them to the referring doctor.</> },
+    { who: "Referring doctor", state: step < 1 ? "wait" : step === 1 ? "ring" : "done",
+      what: step < 1 ? "Joins after the summary" : step === 1 ? "Ringing" : step === 3 ? "Call ended" : "Joined the call",
+      about: <>The doctor at <b className="font-medium text-ink-text">{sending}</b> who is sending the patient. Their phone rings after the summary, and both doctors talk on one call to hand the patient over directly. Nobody at either hospital has to open an app or a link.</> },
   ];
   const dot = { wait: "bg-fill-none", ring: "bg-fill-calling animate-pulse", done: "bg-fill-yes" };
   return (
     <Popup title={title} tone={failed ? "no" : step >= 2 ? "yes" : undefined} tag={simulated ? "Demo · simulated call" : "Live call"} onClose={onClose}>
       {!failed && (
-        <ul className="space-y-1">
-          {rows.map(([who, what, state]) => (
-            <li key={who} className="flex items-center gap-2">
-              <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot[state]}`} />
-              <span className="font-medium text-ink-text">{who}</span>
-              <span className="truncate">{what}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-0.5">
+            {rows.map(({ who, what, state, about }) => (
+              <li key={who}>
+                <button onClick={() => setOpen(open === who ? undefined : who)} aria-expanded={open === who}
+                  className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-ink-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+                  <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot[state]}`} />
+                  <span className="font-medium text-ink-text underline decoration-ink-line decoration-dotted underline-offset-2">{who}</span>
+                  <span className="truncate">{what}</span>
+                  <span aria-hidden className={`ml-auto shrink-0 text-[10px] transition-transform ${open === who ? "rotate-90" : ""}`}>›</span>
+                </button>
+                {open === who && (
+                  <div role="note" className="mb-1 ml-3.5 mt-0.5 rounded-lg border border-ink-line bg-ink-bg px-2.5 py-2 text-[11px] leading-relaxed text-ink-muted
+                    md:absolute md:bottom-0 md:right-full md:z-10 md:mb-0 md:ml-0 md:mr-3 md:mt-0 md:w-72
+                    md:group-data-[side=right]:left-full md:group-data-[side=right]:right-auto md:group-data-[side=right]:ml-3 md:group-data-[side=right]:mr-0 select-text cursor-auto md:bg-ink-panel md:px-3 md:py-2.5 md:text-xs md:shadow-md">
+                    <div className="mb-1 font-semibold text-ink-text md:text-sm">{who}</div>{about}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[10px] text-ink-muted">Tap a call to see what it is and what it says.</p>
+        </>
       )}
     </Popup>
   );
