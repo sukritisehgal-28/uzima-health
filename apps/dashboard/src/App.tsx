@@ -19,6 +19,16 @@ function clock(iso?: string): string {
 }
 /** "482913" -> "482 913", easier to read aloud. */
 
+/** The tab remembers its search so Back (e.g. from the ticket page) brings it back; a refresh or a new visit still starts fresh. */
+const SEARCH_KEY = "uzima-search";
+function rememberSearch(tid: string) {
+  try { sessionStorage.setItem(SEARCH_KEY, tid); } catch { /* storage blocked: Back starts fresh */ }
+}
+function searchToReopen(): string | null {
+  const nav = performance.getEntriesByType?.("navigation")[0] as PerformanceNavigationTiming | undefined;
+  try { return nav?.type === "back_forward" ? sessionStorage.getItem(SEARCH_KEY) : null; } catch { return null; }
+}
+
 export default function App() {
   const [specialty, setSpecialty] = useState("cardiac_icu");
   const [sending, setSending] = useState<{ lat: number; lng: number; name: string; short_name?: string }>();
@@ -76,6 +86,17 @@ export default function App() {
   useEffect(() => {
     // Every visit and every refresh starts a fresh dashboard. Older links carried ?transfer=…; drop it.
     if (new URLSearchParams(window.location.search).has("transfer")) window.history.replaceState(null, "", window.location.pathname);
+    // Back from another page reopens this tab's search from the server.
+    const saved = searchToReopen();
+    if (!saved) return;
+    getStatus(saved).then((s) => {
+      if (tidRef.current) return;   // a new search started meanwhile
+      tidRef.current = saved; setTid(saved);
+      if (s.case?.specialty) setSpecialty(s.case.specialty);
+      if (s.case?.window_min) setWindowMin(s.case.window_min);
+      if (!s.twin) setStartedAt(Date.now() - s.elapsed_s * 1000);
+      restoreStatus(s);
+    }).catch((e) => { if (e instanceof SearchGone) { setEnded(true); setStoppedAt(Date.now()); } });
   }, []);
 
   useEffect(() => {
@@ -144,7 +165,7 @@ export default function App() {
         unavailable: "Live demo calls are limited to approved numbers right now, so every hospital is simulated this time.",
         invalid: "That doesn't look like a US phone number, so every hospital is simulated this time.",
       }[r.visitor_call_problem]);
-      tidRef.current = r.transfer_id; setTid(r.transfer_id); setStartedAt(Date.now());
+      tidRef.current = r.transfer_id; setTid(r.transfer_id); setStartedAt(Date.now()); rememberSearch(r.transfer_id);
       setCards(Object.fromEntries(r.agents.map((a) => [a.agent_id, { ...a, live: a.live && liveCalls, status: "calling" }])));   // no LIVE tag in a simulated run
     } catch { setError("Could not start the search. Check that the services are running."); }
     finally { setStarting(false); }

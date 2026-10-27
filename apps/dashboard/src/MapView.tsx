@@ -199,6 +199,7 @@ export default function MapView({ sending, cards, names, focusKey, searching }:
     const m = map.current;
     if (!m || !sending) return;
     const fit = () => {
+      m.resize();   // the panels below may have just changed height (e.g. a reopened search with its ticket)
       if (!cards.length) return m.jumpTo({ center: [sending.lng - 0.6, sending.lat - 0.2], zoom: 6.2 });
       const b = new maplibregl.LngLatBounds([sending.lng, sending.lat], [sending.lng, sending.lat]);
       cards.forEach((c) => b.extend([c.lng, c.lat]));
