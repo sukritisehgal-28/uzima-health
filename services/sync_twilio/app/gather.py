@@ -67,6 +67,10 @@ def clean_speech(text: str) -> str:
 INTENTS = [
     ("callback", re.compile(r"\b(call (you|me|us) back|call back|get back to you|check and (call|get back))\b")),
     ("hold", re.compile(r"\b(hold on|hang on|bear with me|(one|a|just a|give me a|wait a) (sec|second|moment|minute))\b|^wait$")),
+    ("clarify", re.compile(r"\b(dont understand|do not understand|didnt understand|did not understand|cant understand"
+                           r"|cannot understand|not able to understand|unable to understand|not sure what you|what do you mean"
+                           r"|what are you asking|what youre asking|what you are asking|whats the question|what is the question"
+                           r"|im confused|i am confused|im lost|i am lost|can you explain|please explain|makes no sense|doesnt make sense)\b")),
     ("repeat", re.compile(r"\b(repeat|say that again|come again|pardon|didnt catch|did not catch|what did you say)\b"
                           r"|^(what|sorry|huh|excuse me|sorry what)$")),
     ("question", re.compile(r"\b(who is (this|calling)|whos (this|calling)|who are you|what is this about|whats this about"
@@ -128,7 +132,7 @@ def spoken_intent(text: str):
 
 
 INTENT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["intent", "bed", "ready_in_min"],
-                 "properties": {"intent": {"type": "string", "enum": ["answer", "hold", "repeat", "question", "callback", "unclear"]},
+                 "properties": {"intent": {"type": "string", "enum": ["answer", "hold", "repeat", "clarify", "question", "callback", "unclear"]},
                                 "bed": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
                                 "ready_in_min": {"anyOf": [{"type": "integer"}, {"type": "null"}]}}}
 
@@ -147,7 +151,8 @@ async def interpret(stage: str, text: str, question: str = ""):
     field = "bed" if stage == "availability" else "ready_in_min"
     instruction = ("You read one short utterance from a hospital transfer desk on a phone call with an AI agent. "
                    "Classify it and extract only facts said explicitly. intent: answer (it answers the question), "
-                   "hold (asks the agent to wait), repeat (asks to repeat), question (asks who is calling or about the "
+                   "hold (asks the agent to wait), repeat (did not hear it and asks to hear it again), clarify (heard it but "
+                   "did not understand the question or asks what it means), question (asks who is calling or about the "
                    "patient), callback (will call back or must check first), unclear (anything else). "
                    "bed: true or false only if they clearly said whether they can take the patient, else null. "
                    "ready_in_min: minutes until they can receive the patient, an integer 0 to 240, only if stated; "
@@ -162,7 +167,7 @@ async def interpret(stage: str, text: str, question: str = ""):
             r.raise_for_status()
             data = json.loads(r.json()["content"])
         intent, value = data.get("intent"), data.get(field)
-        if intent in {"hold", "repeat", "question", "callback"}:
+        if intent in {"hold", "repeat", "clarify", "question", "callback"}:
             return intent, None
         if intent == "answer" and stage == "availability" and type(value) is bool:
             return "answer", value
@@ -373,6 +378,47 @@ async def respond(token: str, turn: int, request: Request):
         return Response(voiced(xml), media_type="text/xml")
 
 
+# Everyday words for someone who didn't understand the clinical question (e.g. a demo visitor).
+PLAIN_NEED = {
+    "cardiac_icu": "a patient having a heart attack, who needs a heart procedure team and an intensive care bed",
+    "stroke_thrombectomy": "a patient having a major stroke, who needs a clot-removal procedure and an intensive care bed",
+    "trauma_adult": "a badly injured adult, who needs an emergency trauma room and surgeons",
+    "trauma_burn": "a patient with serious burns, who needs a burn intensive care bed",
+    "trauma_pediatric": "a badly injured child, who needs a children's trauma room",
+    "childbirth": "a mother with a high-risk delivery, who needs a delivery room, a C-section team and intensive care for the baby",
+}
+
+
+def explain(s: dict) -> str:
+    """The current question in plain words, for someone who did not understand it."""
+    h = s["header"]
+    if s["stage"] == "availability":
+        need = PLAIN_NEED.get(h.specialty.value, "a patient who needs urgent specialist care")
+        return (f"Let me put it simply. A doctor has {need}, and wants to send them to {h.hospital}. "
+                "Can your hospital take this patient right now? Please just say yes or no.")
+    if s["stage"] == "ready":
+        return ("I'm asking how many minutes until your team is ready to receive the patient. "
+                "For example, say ten minutes.")
+    if s["stage"] == "reason":
+        return "I'm asking why you can't take the patient. For example, say no staffed bed, or on diversion."
+    return "I'm checking that I heard you correctly. " + readback(s)
+
+
+def detour(s: dict, intent: str | None) -> str | None:
+    """Wait, repeat, explain or say who is calling, then ask the same question again. None: not a detour."""
+    if intent not in {"hold", "repeat", "clarify", "question"} or s["detours"] >= 4:
+        return None
+    s["detours"] += 1
+    if intent == "hold":
+        return ask(s, s["last"], before='<Say>Sure, I will wait.</Say><Pause length="10"/>')
+    if intent == "repeat":
+        return ask(s, "Of course. " + s["last"], question=s["last"])
+    if intent == "clarify":
+        plain = explain(s)
+        return ask(s, plain, question=plain)
+    return ask(s, f"I'm an AI assistant. {s['brief']} " + s["last"], question=s["last"])
+
+
 async def end_call(s: dict, words: str, status: str | None = None) -> str:
     """Finish without a confirmed answer: no answer, or a request to call back."""
     await finish(s, False, status=status)
@@ -399,6 +445,9 @@ async def advance(s: dict, text: str) -> str:
         return ask(s, "Are you still there? " + s["last"], question=s["last"])
     s["silences"] = 0
     if stage == "confirm":
+        reply = detour(s, spoken_intent(text))   # "I don't understand" or "hold on" is not a correction
+        if reply:
+            return reply
         if confirmation(text):
             await finish(s, True)
             # With real doctor calls the desk stays on hold for Connect; when they are simulated it can hang up.
@@ -423,13 +472,9 @@ async def advance(s: dict, text: str) -> str:
     intent, value = await interpret(stage, text, s["last"]) if stage in {"availability", "ready"} else (spoken_intent(text), None)
     if intent == "callback":
         return await end_call(s, "Thank you. The referring doctor's team will call you back. Goodbye.", status="callback_requested")
-    if intent in {"hold", "repeat", "question"} and s["detours"] < 4:
-        s["detours"] += 1
-        if intent == "hold":
-            return ask(s, s["last"], before='<Say>Sure, I will wait.</Say><Pause length="10"/>')
-        if intent == "repeat":
-            return ask(s, "Sure. " + s["last"], question=s["last"])
-        return ask(s, f"I'm an AI assistant. {s['brief']} " + s["last"], question=s["last"])
+    reply = detour(s, intent)
+    if reply:
+        return reply
     if stage == "availability" and type(value) is bool:
         s["bed"], s["retries"] = value, 0
         s["stage"] = "ready" if value else "reason"
@@ -447,4 +492,7 @@ async def advance(s: dict, text: str) -> str:
     prompts = {"availability": s["header"].capability_question + " Please say yes or no, or press 1 or 2.",
                "ready": "Please say the number of minutes until you can receive the patient.",
                "reason": "Please tell me why you cannot receive the patient."}
+    if s["retries"] >= 2:   # a second unclear answer: say it in plain words instead of the same sentence again
+        plain = explain(s) + (" You can also press 1 for yes, or 2 for no." if stage == "availability" else "")
+        return ask(s, "Sorry, I still did not get a clear answer. " + plain, question=plain)
     return ask(s, "Sorry, I did not get a clear answer. " + prompts[stage], question=prompts[stage])

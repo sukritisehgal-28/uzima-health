@@ -150,7 +150,10 @@ def test_bed_answers_without_a_model(speech, value):
 
 @pytest.mark.parametrize("speech,intent", [("hold on", "hold"), ("give me a second", "hold"), ("sorry, can you repeat that?", "repeat"),
                                            ("what?", "repeat"), ("who is this?", "question"), ("which patient", "question"),
-                                           ("let me check and call you back", "callback"), ("yes", None)])
+                                           ("let me check and call you back", "callback"), ("yes", None),
+                                           ("I'm not able to understand what you're asking", "clarify"),
+                                           ("I don't understand", "clarify"), ("what do you mean?", "clarify"),
+                                           ("sorry, I'm lost", "clarify")])
 def test_what_people_say_besides_an_answer(speech, intent):
     assert gather.spoken_intent(speech) == intent
 
@@ -159,7 +162,7 @@ def test_hold_repeat_and_who_is_calling_then_answer(voice):
     tid, _, post, _ = voice
     held = post(0, "hold on").text
     assert "Sure, I will wait" in held and '<Pause length="10"/>' in held and "Say yes or no" in held
-    assert "Sure." in post(1, "sorry, can you repeat that?").text
+    assert "Of course." in post(1, "sorry, can you repeat that?").text
     who = post(2, "who is this?").text
     assert "AI assistant" in who and "South Sunflower" in who and "Say yes or no" in who
     assert "How many minutes" in post(3, "yeah we have a bed").text
@@ -284,3 +287,25 @@ def test_telnyx_lines_use_the_natural_voice_and_a_short_silence_wait(voice, monk
     assert 'speechTimeout="1"' in xml
     monkeypatch.setenv("PHONE_PROVIDER", "twilio")
     assert gather.voiced("<Response><Say>Hi</Say></Response>") == "<Response><Say>Hi</Say></Response>"
+
+
+def test_not_understanding_gets_a_plain_explanation_never_a_no(voice):
+    tid, _, post, _ = voice
+    first = post(0, "I don't understand").text                       # "don't" must not be read as "no"
+    assert "Let me put it simply" in first and "heart attack" in first and "STEMI" not in first and "Please just say yes or no" in first
+    assert "main reason" not in first
+    assert "Of course. Let me put it simply" in post(1, "sorry, can you repeat that?").text   # repeats the simple version
+    post(2, "yes")
+    assert "For example, say ten minutes" in post(3, "I'm not able to understand what you're asking").text
+    post(4, "ten")
+    read = post(5, "what do you mean?").text                        # at the read-back: explain, not a correction
+    assert "checking that I heard you correctly" in read and "ready in 10 minutes" in read and "correct that" not in read
+    assert "Hangup" in post(6, "yes").text or "stay on the line" in post(6, "yes").text
+    assert results(tid)[0]["status"] == "available" and results(tid)[0]["ready_in_min"] == 10
+
+
+def test_second_unclear_answer_is_explained_in_plain_words(voice):
+    _, _, post, _ = voice
+    assert "Sorry, I did not get a clear answer" in post(0, "the usual").text
+    second = post(1, "the usual").text
+    assert "still did not get a clear answer" in second and "Let me put it simply" in second and "press 1 for yes" in second
