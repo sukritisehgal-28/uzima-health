@@ -101,3 +101,37 @@ def test_simulated_doctor_call_steps_through_the_handoff(monkeypatch):
         "calling_accepting_doctor", "calling_sending_doctor", "connected", "ended"]
     monkeypatch.setenv("SIM_TIME_SCALE", "0")
     assert simulated_handoff(0) == "ended"
+
+
+def test_public_demo_always_has_one_simulated_yes(monkeypatch):
+    import asyncio
+    from fastapi.testclient import TestClient
+    from services.agent.app import call_sim
+    from services.collector.app import main as collector
+    from services.orchestrator.app import main as orch
+    from services.shared import clients
+    clients.register_asgi("collector", collector.app)
+    monkeypatch.setenv("VISITOR_CALLS", "1")
+    monkeypatch.setenv("SIM_TIME_SCALE", "0")
+    launched = []
+    class Launcher:
+        async def launch(self, tid, headers):
+            launched.extend(headers)
+    monkeypatch.setattr(orch, "get_launcher", lambda: Launcher())
+    r = TestClient(orch.app).post("/transfers", json={"age": 62, "sex": "Male", "specialty": "cardiac_icu", "condition": "STEMI",
+                                                      "onset_or_last_known_well": "2026-10-27T00:00:00Z", "key_scores": {}})
+    assert r.status_code == 200 and all("sure_yes" not in a for a in r.json()["agents"])   # not shown to the dashboard
+    sure = [h for h in launched if h.sure_yes]
+    assert len(sure) == 1 and not sure[0].live
+    class Emit:
+        async def event(self, *a, **k): pass
+        async def result(self, r): self.r = r
+    for _ in range(20):                                  # the simulated answer is random, except for this hospital
+        e = Emit()
+        assert asyncio.run(call_sim.run_sim(sure[0], e)).status.value == "available"
+    monkeypatch.setenv("VISITOR_CALLS", "0")
+    launched.clear()
+    TestClient(orch.app).post("/transfers", json={"age": 62, "sex": "Male", "specialty": "cardiac_icu", "condition": "STEMI",
+                                                 "onset_or_last_known_well": "2026-10-27T00:00:00Z", "key_scores": {}})
+    assert launched and not any(h.sure_yes for h in launched)   # the team's own setup keeps fully random answers
+    clients.clear()

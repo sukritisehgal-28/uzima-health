@@ -272,3 +272,15 @@ def test_with_simulated_doctor_calls_a_confirmed_yes_thanks_and_hangs_up(voice, 
     assert "Thank you, your answer is confirmed" in reply and reply.endswith("<Hangup/></Response>")
     assert "stay on the line" not in reply and "<Redirect" not in reply
     assert results(tid)[0]["status"] == "available" and results(tid)[0]["ready_in_min"] == 10
+
+
+def test_telnyx_lines_use_the_natural_voice_and_a_short_silence_wait(voice, monkeypatch):
+    _, _, post, _ = voice
+    monkeypatch.setenv("PHONE_PROVIDER", "telnyx")
+    monkeypatch.setattr(gateway.config, "has_twilio", lambda: True)
+    monkeypatch.setattr(gather, "confirm_telnyx_call", AsyncMock(return_value=True))
+    xml = post(0, "hold on").text
+    assert xml.count('<Say voice="AWS.Polly.Joanna-Neural">') == 2 and "<Say>" not in xml
+    assert 'speechTimeout="1"' in xml
+    monkeypatch.setenv("PHONE_PROVIDER", "twilio")
+    assert gather.voiced("<Response><Say>Hi</Say></Response>") == "<Response><Say>Hi</Say></Response>"

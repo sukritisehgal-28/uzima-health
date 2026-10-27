@@ -24,8 +24,17 @@ from services.shared.clients import client
 from services.shared.schemas import AgentHeader, Status, TranscriptLine
 
 router = APIRouter()
+# One second of silence ends an answer (two felt slow on the phone).
 TELNYX_SPEECH = ('transcriptionEngine="Deepgram" model="deepgram/nova-3" keyterms="yes,no,minutes,bed" '
-                 'speechTimeout="2" language="en-US"')
+                 'speechTimeout="1" language="en-US"')
+TELNYX_VOICE = "AWS.Polly.Joanna-Neural"   # natural neural voice; Telnyx's default "man" voice sounds robotic
+
+
+def voiced(xml: str) -> str:
+    """Every spoken line on Telnyx uses the natural voice (TELNYX_VOICE overrides it)."""
+    if config.phone_provider() != "telnyx":
+        return xml
+    return xml.replace("<Say>", f'<Say voice="{escape(config.env("TELNYX_VOICE", TELNYX_VOICE))}">')
 sessions: dict[str, dict] = {}
 
 
@@ -330,14 +339,14 @@ async def respond(token: str, turn: int, request: Request):
         raise HTTPException(404, "Call session expired")
     if not signed and not await confirm_telnyx_call(s, params):
         # Telnyx could not confirm the call just now: ask the same question again, never trust the answer.
-        return Response(ask(s, s["last"]), media_type="text/xml")
+        return Response(voiced(ask(s, s["last"])), media_type="text/xml")
     from services.sync_twilio.app.main import live_calls
     entry = live_calls.get((s["tid"], s["header"].agent_id))
     if entry is not None and not entry.get("call_sid") and params.get("CallSid"):
         entry["call_sid"] = params["CallSid"][0]   # Telnyx may only report the call id here
     async with s["lock"]:
         if turn in s["cache"]:
-            return Response(s["cache"][turn], media_type="text/xml")
+            return Response(voiced(s["cache"][turn]), media_type="text/xml")
         if turn != s["turn"]:
             raise HTTPException(409, "Unexpected call turn")
         s["turn"] += 1
@@ -361,7 +370,7 @@ async def respond(token: str, turn: int, request: Request):
         else:
             xml = await advance(s, text)
         s["cache"][turn] = xml
-        return Response(xml, media_type="text/xml")
+        return Response(voiced(xml), media_type="text/xml")
 
 
 async def end_call(s: dict, words: str, status: str | None = None) -> str:

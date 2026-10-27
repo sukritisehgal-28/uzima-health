@@ -64,6 +64,7 @@ class AgentHeader(BaseModel):
     capability_question: str            # Q1 wording for this specialty
     transport: TransportEstimate
     live: bool = False                  # True only for A1
+    sure_yes: bool = False              # public demo: this simulated hospital always confirms a bed, so Connect is always possible
 
 
 class Status(str, Enum):

@@ -31,9 +31,12 @@ async def _transcript(header: AgentHeader, answer: dict) -> list[TranscriptLine]
 async def run_sim(header: AgentHeader, emit: Emitter) -> AgentResult:
     scale = config.sim_time_scale()
     await emit.event("call_started")
-    await asyncio.sleep(random.uniform(5, 45) * scale)
+    # The guaranteed demo yes answers early so the recommendation never waits long.
+    await asyncio.sleep(random.uniform(8, 20) * scale if header.sure_yes else random.uniform(5, 45) * scale)
     forced = config.sim_a1_answer() if header.live else "random"
-    if forced == "available":
+    if header.sure_yes:
+        answer = {"status": "available", "ready_in_min": random.choice((10, 15, 20))}
+    elif forced == "available":
         answer = {"status": "available", "ready_in_min": 10}
     elif forced == "declined":
         answer = {"status": "declined", "decline_reason": "no staffed bed"}

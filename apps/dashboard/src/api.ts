@@ -44,12 +44,18 @@ export async function startTransfer(specialty: string, window_min?: number, phon
   if (!r.ok) throw new Error(await r.text());
   return r.json() as Promise<{ transfer_id: string; agents: Agent[]; visitor_call?: boolean | null; visitor_call_problem?: "invalid" | "unavailable" | "limit" | null }>;
 }
+/** Thrown when the server no longer has a search (searches live in memory, so a server restart ends them). */
+export class SearchGone extends Error {}
 export async function getStatus(tid: string) {
-  return (await fetch(`${ORCH}/transfers/${tid}`)).json();
+  const r = await fetch(`${ORCH}/transfers/${tid}`);
+  if (r.status === 404) throw new SearchGone("search ended");
+  if (!r.ok) throw new Error(`status ${r.status}`);
+  return r.json();
 }
 export async function accept(tid: string, hospital_id?: string) {
   const r = await fetch(`${ORCH}/transfers/${tid}/accept`, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ hospital_id, accepting_physician: "Dr. Accepting (demo)" }) });
+  if (r.status === 404) throw new SearchGone("search ended");
   if (!r.ok) throw new Error(await r.text());
   return r.json() as Promise<{ accepted: string; treatment_start_min?: number | null; twin?: Twin; bridge?: { mode: string; status: string } }>;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import MapView from "./MapView";
-import { WS, accept, getCenters, getHealth, getStatus, startTransfer, type Card, type Ticket, type Twin } from "./api";
+import { WS, SearchGone, accept, getCenters, getHealth, getStatus, startTransfer, type Card, type Ticket, type Twin } from "./api";
 
 const CASES: { key: string; label: string; detail: string }[] = [
   { key: "cardiac_icu", label: "Heart attack", detail: "needs a cath lab and cardiac ICU" },
@@ -52,6 +52,7 @@ export default function App() {
   const [callerId, setCallerId] = useState<string>();
   const [callNote, setCallNote] = useState<string>();
   const [doctorPopup, setDoctorPopup] = useState(true);
+  const [ended, setEnded] = useState(false);           // the server no longer has this search (e.g. it restarted)
   const tidRef = useRef<string>();
 
   function restoreStatus(s: any) {
@@ -105,7 +106,13 @@ export default function App() {
 
   useEffect(() => {
     if (!tid) return;
-    const t = setInterval(async () => { try { restoreStatus(await getStatus(tid)); } catch { /* transient */ } }, 1000);
+    const t = setInterval(async () => {
+      try { restoreStatus(await getStatus(tid)); }
+      catch (e) {
+        if (!(e instanceof SearchGone)) return;   // network blips: keep polling
+        clearInterval(t); setEnded(true); setStoppedAt((s) => s ?? Date.now());
+      }
+    }, 1000);
     return () => clearInterval(t);
   }, [tid]);
 
@@ -124,7 +131,7 @@ export default function App() {
     if (starting) return;
     setStarting(true);
     setError(undefined); setBridgeMode(undefined); setBridgeStatus(undefined); setTwin(undefined); setRec(undefined); setStoppedAt(undefined);
-    setCallNote(undefined); setDoctorPopup(true);
+    setCallNote(undefined); setDoctorPopup(true); setEnded(false);
     try {
       const r = await startTransfer(specialty, windowMin, withPhone?.trim() || undefined);   // untouched slider = the case default window
       if (r.visitor_call_problem) setCallNote({
@@ -145,7 +152,10 @@ export default function App() {
       setBridgeMode(r.bridge?.mode); setBridgeStatus(r.bridge?.status);
       setStoppedAt(Date.now());
       if (r?.twin && tidRef.current === tid) setTwin(r.twin);   // same twin as the websocket twin_ready event, in case that is missed
-    } catch (e: any) { setError(String(e.message ?? e)); }
+    } catch (e: any) {
+      if (e instanceof SearchGone) { setEnded(true); setStoppedAt((s) => s ?? Date.now()); }
+      else setError("Could not connect the doctors. Please try again.");
+    }
     setBusy(false);
   }
 
@@ -153,7 +163,8 @@ export default function App() {
   const n = list.length;
   const count = (...s: string[]) => list.filter((c) => s.includes(c.status)).length;
   const calling = count("calling"), callback = count("callback_requested"), yes = count("available", "held", "accepted", "released"), no = count("declined"), none = count("no_answer");
-  const searching = n > 0 && !twin && calling > 0;
+  const searching = n > 0 && !twin && calling > 0 && !ended;
+  const finished = n > 0 && calling === 0 && callback === 0;   // every hospital has given its final answer
   const elapsed = startedAt ? Math.floor(((stoppedAt ?? now) - startedAt) / 1000) : 0;
   const perCall = 90;
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -245,7 +256,7 @@ export default function App() {
         {/* Popups: the visitor's own call, then the two doctor calls after Connect. */}
         <div className="pointer-events-none absolute bottom-[5.5rem] right-3 flex w-[min(21rem,calc(100%-1.5rem))] flex-col items-stretch gap-2">
           {callNote && <Popup title="Simulated search" onClose={() => setCallNote(undefined)}><p>{callNote}</p></Popup>}
-          {visitorCard && !twin && <VisitorCall card={visitorCard} />}
+          {visitorCard && !twin && !ended && <VisitorCall card={visitorCard} canConnect={!!rec} />}
           {twin && doctorPopup && bridgeStatus && <DoctorCall status={bridgeStatus} simulated={bridgeMode !== "live"} onClose={() => setDoctorPopup(false)} />}
         </div>
       </section>
@@ -287,6 +298,11 @@ export default function App() {
                   </section>
                 )}
               </div>
+            ) : ended ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm text-ink-muted"><b className="font-semibold text-ink-text">This search has ended.</b> The demo server was restarted, so its results are gone. Please start a new search.</div>
+                <button onClick={() => (visitorCalls ? setAskCall(true) : onStart())} disabled={starting} className="btn-primary">Start a new search</button>
+              </div>
             ) : rec ? (
               <div className="win flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-xl px-4 py-3">
                 <div className="min-w-0">
@@ -306,7 +322,9 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-ink-muted">{n ? "Waiting for the first hospital to say yes…" : "Choose the condition and press Find a bed. Every hospital that can treat it within the time window is called at once."}</div>
+              <div className="text-sm text-ink-muted">{!n ? "Choose the condition and press Find a bed. Every hospital that can treat it within the time window is called at once."
+                : finished ? "No hospital confirmed a bed this time. Press Find a bed to search again, or widen the time window."
+                : "Waiting for the first hospital to say yes…"}</div>
             )}
         </div>
         <div className="bg-ink-bg px-5 py-3">
@@ -396,17 +414,20 @@ function Popup({ title, tone, tag, onClose, children }: { title: string; tone?: 
 }
 
 /** The first hospital call, answered on the visitor's own phone. */
-function VisitorCall({ card }: { card: Card }) {
+function VisitorCall({ card, canConnect }: { card: Card; canConnect: boolean }) {
   const s = card.status;
   if (card.error || s === "no_answer")
     return <Popup title="Your phone wasn't reached" tone="no"><p>No answer was recorded for {card.hospital}, so the search continues with the other hospitals.</p></Popup>;
   if (s === "calling")
     return <Popup title="Your phone is ringing" tag="Live call"><p>You're the transfer desk at <b className="font-medium text-ink-text">{card.hospital}</b>. Answer, say yes or no, and confirm when the agent reads your answer back.</p></Popup>;
   if (s === "declined")
-    return <Popup title="You said no" tag="Confirmed by phone"><p>{card.hospital}: {card.decline_reason ?? "no bed"}. The other hospitals are still answering.</p></Popup>;
+    return <Popup title="You said no" tag="Confirmed by phone"><p>{card.hospital}: {card.decline_reason ?? "no bed"}. {canConnect
+      ? "Another hospital confirmed a bed: press Connect doctors below to see the doctor calls."
+      : "The other hospitals are still answering."}</p></Popup>;
   if (s === "callback_requested")
     return <Popup title="You asked for a call back" tag="Live call"><p>{card.hospital} is counted as pending.</p></Popup>;
-  return <Popup title="You said yes" tone="yes" tag="Confirmed by phone"><p>{card.hospital} can take the patient, ready in {card.ready_in_min ?? "?"} min. The agent thanked you and ended the call. Press Connect doctors to see the doctor calls.</p></Popup>;
+  return <Popup title="You said yes" tone="yes" tag="Confirmed by phone"><p>{card.hospital} can take the patient, ready in {card.ready_in_min ?? "?"} min. The agent thanked you and ended the call.{canConnect
+      ? " Press Connect doctors below to see the doctor calls." : " The recommendation appears below in a moment."}</p></Popup>;
 }
 
 /** The doctor-to-doctor call after Connect: the accepting doctor hears the summary first, then the referring doctor joins. */

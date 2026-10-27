@@ -130,7 +130,7 @@ def twiml_doc(doc_id: str):
     """Twilio fetches call instructions here (POST by default)."""
     if doc_id not in twiml_docs:
         raise HTTPException(404, "unknown twiml id")
-    return Response(content=twiml_docs[doc_id], media_type="text/xml")
+    return Response(content=gather.voiced(twiml_docs[doc_id]), media_type="text/xml")
 
 
 @app.api_route("/inbound", methods=["GET", "POST"])
@@ -148,11 +148,11 @@ async def inbound(request: Request):
     if request.query_params.get("fallback"):
         # Telnyx calls this when a live demo call's instructions fail mid-call.
         log.warning("Demo call fell back to the apology (account %s)", account[:64] or "unknown")
-        return Response("<Response><Say>Sorry, we had a technical problem on our side. The referring doctor will follow up. "
-                        "Goodbye.</Say><Hangup/></Response>", media_type="text/xml")
+        return Response(gather.voiced("<Response><Say>Sorry, we had a technical problem on our side. The referring doctor "
+                        "will follow up. Goodbye.</Say><Hangup/></Response>"), media_type="text/xml")
     log.warning("Inbound call to the demo line (account %s)", account[:64] or "unknown")
-    return Response("<Response><Say>Hello. This is the Project Uzima demo line. It only places calls, so nobody can "
-                    "answer here. To try the demo, visit uzima health dot vercel dot app. Goodbye.</Say><Hangup/></Response>",
+    return Response(gather.voiced("<Response><Say>Hello. This is the Project Uzima demo line. It only places calls, so nobody "
+                    "can answer here. To try the demo, visit uzima health dot vercel dot app. Goodbye.</Say><Hangup/></Response>"),
                     media_type="text/xml")
 
 

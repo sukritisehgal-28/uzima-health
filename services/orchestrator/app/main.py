@@ -75,7 +75,7 @@ def visitor_phone(raw: str | None) -> tuple[str | None, str | None]:
 
 def public_header(h: AgentHeader) -> dict:
     """Agent headers as the dashboard sees them: phone numbers stay on the server."""
-    return {**h.model_dump(mode="json"), "phone": "[private]" if h.live else h.phone}
+    return {**h.model_dump(mode="json", exclude={"sure_yes"}), "phone": "[private]" if h.live else h.phone}
 
 
 def simulated_handoff(seconds: float) -> str:
@@ -147,6 +147,11 @@ async def start_transfer(case: Case, background: BackgroundTasks, x_uzima_demo_p
         phone, problem = visitor_phone(x_uzima_demo_phone) if ready else (None, None)
         phones = [phone] if phone else []
     headers = select_centers(case.specialty, memory, window_min=case.window_min, phones=phones)
+    if config.env("VISITOR_CALLS") == "1":
+        # Whatever a visitor says on the phone (or if they don't answer), one simulated hospital confirms a bed,
+        # so a public demo always reaches Connect doctors.
+        sure = next((h for h in headers if not h.live), None)
+        headers = [h.model_copy(update={"sure_yes": h is sure}) for h in headers]
     tid = uuid.uuid4().hex[:10]
     TRANSFERS[tid] = {"case": case, "headers": headers, "started": time.time(), "state": "searching"}
     await _tevent(tid, "search_started", agents=[public_header(h) for h in headers],
