@@ -52,7 +52,8 @@ export default function App() {
   const [callerId, setCallerId] = useState<string>();
   const [callNote, setCallNote] = useState<string>();
   const [doctorPopup, setDoctorPopup] = useState(true);
-  const [ended, setEnded] = useState(false);           // the server no longer has this search (e.g. it restarted)
+  const [ended, setEnded] = useState(false);
+  const [awake, setAwake] = useState(false);           // the backend answered; after a quiet period it needs ~30 s to start           // the server no longer has this search (e.g. it restarted)
   const tidRef = useRef<string>();
 
   function restoreStatus(s: any) {
@@ -83,7 +84,11 @@ export default function App() {
       setNames(Object.fromEntries(d.centers.map((c: any) => [c.id, c.short_name ?? c.name])));
       setWindows(Object.fromEntries(Object.entries(d.demo_cases).map(([k, v]: [string, any]) => [k, d.windows[v.window]])));
     }).catch(() => setError("The demo backend is unavailable. Please try again shortly."));
-    getHealth().then((h) => { setLiveCalls(h?.integrations?.twilio === "live"); setVisitorCalls(!!h?.visitor_calls); setCallerId(h?.demo_caller_id ?? undefined); }).catch(() => {});
+    // Nothing starts until the backend has answered, so the phone popup is never skipped.
+    const wake = (tries: number) => getHealth()
+      .then((h) => { setLiveCalls(h?.integrations?.twilio === "live"); setVisitorCalls(!!h?.visitor_calls); setCallerId(h?.demo_caller_id ?? undefined); setAwake(true); })
+      .catch(() => (tries > 0 ? setTimeout(() => wake(tries - 1), 3000) : setAwake(true)));
+    wake(20);
   }, []);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, []);
 
@@ -204,8 +209,9 @@ export default function App() {
               onChange={(e) => setWindowMin(Number(e.target.value))} className="w-28 accent-[#F0C06A]" />
             <b className="tabular font-medium text-ink-text">{windowMin ?? windows[specialty]?.transport_budget_min ?? 60} min</b>
           </label>
-          <button onClick={() => (visitorCalls ? setAskCall(true) : onStart())} disabled={searching || starting} className="btn-primary">
-            {starting ? "Starting…" : searching ? "Searching…" : twin ? "New search" : "Find a bed"}
+          <button onClick={() => (visitorCalls ? setAskCall(true) : onStart())} disabled={!awake || searching || starting} className="btn-primary"
+            title={awake ? undefined : "The demo server is starting; this takes up to 30 seconds after a quiet period."}>
+            {!awake ? "Waking up…" : starting ? "Starting…" : searching ? "Searching…" : twin ? "New search" : "Find a bed"}
           </button>
         </div>
       </header>
@@ -322,7 +328,8 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-ink-muted">{!n ? "Choose the condition and press Find a bed. Every hospital that can treat it within the time window is called at once."
+              <div className="text-sm text-ink-muted">{!n && !awake ? "Waking up the demo server. This takes up to 30 seconds after a quiet period."
+                : !n ? "Choose the condition and press Find a bed. Every hospital that can treat it within the time window is called at once."
                 : finished ? "No hospital confirmed a bed this time. Press Find a bed to search again, or widen the time window."
                 : "Waiting for the first hospital to say yes…"}</div>
             )}
