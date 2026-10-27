@@ -32,6 +32,15 @@ def has_bedrock() -> bool:
     return env("USE_BEDROCK", "0") == "1"
 
 
+def has_claude() -> bool:
+    """Claude through the Anthropic API (LLM_PROVIDER=anthropic): Claude Haiku by default, for live-call understanding."""
+    return env("LLM_PROVIDER", "").lower() == "anthropic" and bool(env("ANTHROPIC_API_KEY"))
+
+
+def has_llm() -> bool:
+    return has_claude() or has_bedrock()
+
+
 PHONE_KEYS = {"twilio": ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"),
               # Telnyx's TwiML-compatible TeXML API: account id, TeXML application id, API key, webhook public key
               "telnyx": ("TELNYX_ACCOUNT_SID", "TELNYX_APP_ID", "TELNYX_API_KEY", "TELNYX_PUBLIC_KEY", "TELNYX_FROM_NUMBER")}
@@ -79,6 +88,7 @@ def sim_a1_answer() -> str:
 
 
 def integrations() -> dict:
-    return {"openai": "live" if has_bedrock() else "mock", "twilio": "live" if has_twilio() else "mock",
+    return {"openai": "live" if has_bedrock() else "mock", "claude": "live" if has_claude() else "mock",
+            "twilio": "live" if has_twilio() else "mock",
             "stedi": "live" if has_stedi() else "mock", "dynamodb": "live" if has_dynamo() else "memory",
             "aws_location": "live" if has_location() else "estimates", "launcher": launch_mode()}

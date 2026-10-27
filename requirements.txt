@@ -7,6 +7,8 @@ websockets>=12
 cryptography>=42
 segno>=1.6
 pytest>=8
+# Claude (Anthropic API) for live-call understanding when LLM_PROVIDER=anthropic.
+anthropic>=2.3,<3
 # AWS integrations; CRT also supports AWS CLI browser-login credentials.
 boto3[crt]>=1.41.0,<2
 # Optional, only when LAUNCH_MODE=k8s:

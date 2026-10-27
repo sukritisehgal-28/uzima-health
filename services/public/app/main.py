@@ -27,6 +27,8 @@ async def forward(path: str, request: Request):
         service = "sync_twilio"
     elif re.fullmatch(r"handoff-status/[a-f0-9]{32}/(?:conference|accepting|sending)", path) and request.method == "POST":
         service = "sync_twilio"
+    elif path == "inbound" and request.method in {"GET", "POST"}:
+        service = "sync_twilio"
     elif path == "view" and request.method == "GET":
         service = "handoff"
     elif re.fullmatch(r"tickets/[A-Za-z0-9_-]+(?:\.pkpass)?", path) and request.method == "GET":

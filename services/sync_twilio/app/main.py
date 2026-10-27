@@ -12,7 +12,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, HTTPException, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from pydantic import BaseModel
 
 from services.shared import config
@@ -103,6 +103,15 @@ async def _telnyx(path: str, data: dict) -> dict:
     return {**result, "sid": result.get("call_sid") or result.get("sid")}
 
 
+async def telnyx_call(call_sid: str) -> dict:
+    """Telnyx's own record of a call (account, from, to), used to confirm unsigned call callbacks."""
+    url = f"https://api.telnyx.com/v2/texml/Accounts/{config.env('TELNYX_ACCOUNT_SID')}/Calls/{call_sid}"
+    async with httpx.AsyncClient(timeout=4, headers={"Authorization": f"Bearer {config.env('TELNYX_API_KEY')}"}) as c:
+        r = await c.get(url)
+        r.raise_for_status()
+        return r.json()
+
+
 def _mock(kind: str, **payload) -> dict:
     outbox.append({"kind": kind, **payload})
     log.info("MOCK %s %s", kind, payload)
@@ -122,6 +131,29 @@ def twiml_doc(doc_id: str):
     if doc_id not in twiml_docs:
         raise HTTPException(404, "unknown twiml id")
     return Response(content=twiml_docs[doc_id], media_type="text/xml")
+
+
+@app.api_route("/inbound", methods=["GET", "POST"])
+async def inbound(request: Request):
+    """Someone called the demo number back. It only places calls, so say so and hang up.
+    The provider's account id is logged (never the caller's number): Telnyx shows it nowhere else on a trial."""
+    body = await request.body()
+    account = (gather.callback_params(request, body).get("AccountSid") or request.query_params.getlist("AccountSid") or [""])[0]
+    test_speech = config.env("INBOUND_TEST_SPEECH")
+    if test_speech:
+        # Speech self-test only: the demo number calls itself and this side answers like a hospital desk.
+        log.warning("Inbound self-test call answered")
+        lines = f'<Say>{escape(test_speech)}</Say><Pause length="5"/>' * 15
+        return Response(f'<Response><Pause length="3"/>{lines}<Hangup/></Response>', media_type="text/xml")
+    if request.query_params.get("fallback"):
+        # Telnyx calls this when a live demo call's instructions fail mid-call.
+        log.warning("Demo call fell back to the apology (account %s)", account[:64] or "unknown")
+        return Response("<Response><Say>Sorry, we had a technical problem on our side. The referring doctor will follow up. "
+                        "Goodbye.</Say><Hangup/></Response>", media_type="text/xml")
+    log.warning("Inbound call to the demo line (account %s)", account[:64] or "unknown")
+    return Response("<Response><Say>Hello. This is the Project Uzima demo line. It only places calls, so nobody can "
+                    "answer here. To try the demo, visit uzima health dot vercel dot app. Goodbye.</Say><Hangup/></Response>",
+                    media_type="text/xml")
 
 
 @app.post("/call")
@@ -601,8 +633,8 @@ async def close_held_calls(transfer_id: str, winner: str):
         if tid != transfer_id:
             continue
         held = gather.close(tid, agent_id)   # a hold redirect still in flight hangs up instead of looping
-        if not entry.get("call_sid") or not (held or agent_id == winner):
-            continue                         # declined calls have already said goodbye
+        if not entry.get("call_sid") or not held:
+            continue                         # calls that already said goodbye are not touched
         words = CLOSING if agent_id == winner else RELEASED
         try:
             await _twilio(f"Calls/{entry['call_sid']}.json",

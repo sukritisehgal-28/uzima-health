@@ -1,5 +1,6 @@
-"""OpenAI text gateway through AWS Bedrock, with bounded concurrency and SDK retries.
-USE_BEDROCK=0 keeps deterministic templates. AWS credentials come from the standard SDK chain.
+"""Language-model gateway: OpenAI GPT-OSS through AWS Bedrock, or Claude through the Anthropic API
+(LLM_PROVIDER=anthropic), with bounded concurrency and SDK retries. Without either it keeps deterministic templates.
+AWS credentials come from the standard SDK chain.
 The separate Twilio Realtime audio bridge is not served by this text gateway.
 """
 import asyncio
@@ -15,6 +16,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from services.shared import config
+from services.sync_openai.app import claude
 
 app = FastAPI(title="Project Uzima OpenAI gateway")
 MAX_CONCURRENT = int(os.getenv("OPENAI_MAX_CONCURRENT", "5"))
@@ -26,6 +28,7 @@ class CompleteRequest(BaseModel):
     messages: list[dict]
     model: str | None = None
     json_mode: bool = False
+    output_schema: dict | None = None    # JSON schema for json_mode; Claude enforces it, Bedrock gets it as an instruction
 
 
 class PersonaRequest(BaseModel):
@@ -90,6 +93,11 @@ def _complete_bedrock(req: CompleteRequest) -> str:
 
 async def complete(req: CompleteRequest) -> str:
     async with _slots:
+        if config.has_claude():
+            answer = await claude.complete(req.messages, req.output_schema if req.json_mode else None)
+            if req.json_mode and not isinstance(json.loads(answer), dict):
+                raise ValueError("Claude returned JSON that is not an object")
+            return answer
         return await asyncio.to_thread(_complete_bedrock, req)
 
 
@@ -109,7 +117,7 @@ def template_lines(p: PersonaRequest) -> list[dict]:
 
 @app.post("/complete")
 async def post_complete(req: CompleteRequest):
-    if not config.has_bedrock():
+    if not config.has_llm():
         return {"mode": "mock", "content": ""}
     return {"mode": "live", "content": await complete(req)}
 
@@ -139,4 +147,5 @@ async def personas(p: PersonaRequest):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "mode": "live" if config.has_bedrock() else "mock", "max_concurrent": MAX_CONCURRENT}
+    return {"ok": True, "mode": "live" if config.has_llm() else "mock", "provider": "anthropic" if config.has_claude()
+            else "bedrock" if config.has_bedrock() else None, "max_concurrent": MAX_CONCURRENT}

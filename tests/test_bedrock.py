@@ -3,7 +3,7 @@ import asyncio
 import io
 import json
 import threading
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -119,3 +119,26 @@ def test_bedrock_personas_reach_existing_http_contract(monkeypatch):
             assert response.status_code == 200
             assert response.json() == {"mode": "live", "lines": expected}
     asyncio.run(run())
+
+
+def test_claude_haiku_answers_with_the_requested_schema(monkeypatch):
+    from types import SimpleNamespace
+    from services.sync_openai.app import claude
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("CLAUDE_MODEL", raising=False)
+    create = AsyncMock(return_value=SimpleNamespace(stop_reason="end_turn", content=[
+        SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text='{"intent": "hold", "bed": null}')]))
+    monkeypatch.setattr(claude, "_anthropic", lambda: SimpleNamespace(messages=SimpleNamespace(create=create)))
+    schema = {"type": "object", "properties": {"intent": {"type": "string"}}, "required": ["intent"], "additionalProperties": False}
+    req = gateway.CompleteRequest(json_mode=True, output_schema=schema, messages=[{"role": "system", "content": "Classify."},
+                                                                          {"role": "user", "content": "hold on"}])
+    assert asyncio.run(gateway.post_complete(req)) == {"mode": "live", "content": '{"intent": "hold", "bed": null}'}
+    kwargs = create.call_args.kwargs
+    assert kwargs["model"] == "claude-haiku-5-5" and kwargs["system"] == "Classify."
+    assert kwargs["messages"] == [{"role": "user", "content": "hold on"}]
+    assert kwargs["output_config"] == {"effort": "low", "format": {"type": "json_schema", "schema": schema}}
+    assert gateway.health()["provider"] == "anthropic"
+    create.return_value = SimpleNamespace(stop_reason="refusal", content=[])
+    with pytest.raises(ValueError):
+        asyncio.run(gateway.post_complete(req))

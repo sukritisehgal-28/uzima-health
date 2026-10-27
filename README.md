@@ -90,6 +90,8 @@ For an offline rehearsal, set `TWILIO_ENABLED=0` and `SIM_A1_ANSWER=available`. 
 
 A passing preflight doesn't prove phone audio works; rehearse with two people as described in [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md).
 
+On a call, plain rules handle the common replies (yes or no, minutes and ranges, "hold on", "can you repeat that", "who is this", "call you back", silence). With `LLM_PROVIDER=anthropic`, Claude Haiku interprets only what the rules can't; the read-back is still confirmed by an explicit yes, never by a model.
+
 For a public demo, `VISITOR_CALLS=1` lets a visitor type their own US number so the first hospital call rings their phone; every other hospital is simulated, calls are capped per day, and the number is never shown or stored as entered. `DOCTOR_CALLS=simulated` keeps the two doctor calls on the dashboard instead of dialing.
 
 ## Deployment

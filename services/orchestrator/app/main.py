@@ -256,4 +256,6 @@ def centers():
 @app.get("/health")
 def health():
     return {"ok": True, "integrations": config.integrations(), "centers": len(CENTERS),
-            "visitor_calls": config.env("VISITOR_CALLS") == "1" and config.has_twilio()}
+            "visitor_calls": config.env("VISITOR_CALLS") == "1" and config.has_twilio(),
+            # the number a visitor sees calling them (public caller ID), shown in the dashboard's call popup
+            "demo_caller_id": config.from_number() if config.env("VISITOR_CALLS") == "1" and config.has_twilio() else None}

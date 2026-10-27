@@ -351,10 +351,11 @@ def test_telnyx_callbacks_must_carry_a_fresh_valid_signature(monkeypatch):
         sig = base64.b64encode(key.sign(f"{stamp}|".encode() + (signed or body))).decode()
         return SimpleNamespace(headers={"telnyx-timestamp": str(stamp), "telnyx-signature-ed25519": sig})
     now, body = int(time.time()), b"CallSid=v3%3Aabc&SpeechResult=yes"
-    gather.validate_signature(request(now, body), {}, body)                     # valid
+    assert gather.validate_signature(request(now, body), {}, body) is True      # valid
     for bad in (request(now, body, signed=b"SpeechResult=no"), request(now - 600, body)):
         with pytest.raises(HTTPException):
             gather.validate_signature(bad, {}, body)                         # tampered, stale
+    assert gather.validate_signature(SimpleNamespace(headers={}), {}, body) is False   # unsigned: confirm with Telnyx
 
 
 def test_telnyx_calls_use_the_texml_api(monkeypatch):
@@ -388,3 +389,32 @@ def test_callbacks_may_arrive_as_json():
     req = SimpleNamespace(headers={"content-type": "application/json"})
     assert callback_params(req, b'{"CallSid": "v3:abc", "SpeechResult": "yes", "Digits": null}') == {"CallSid": ["v3:abc"], "SpeechResult": ["yes"]}
     assert callback_params(SimpleNamespace(headers={}), b"Digits=1")["Digits"] == ["1"]
+
+
+def test_unsigned_telnyx_callbacks_count_only_for_a_call_telnyx_confirms(monkeypatch):
+    from fastapi import HTTPException
+    from services.sync_twilio.app import gather
+    monkeypatch.setenv("PHONE_PROVIDER", "telnyx")
+    monkeypatch.setenv("TELNYX_ACCOUNT_SID", "acct")
+    monkeypatch.setenv("TELNYX_FROM_NUMBER", "+16623002188")
+    record = {"account_sid": "acct", "from": "+16623002188", "to": H.phone}
+    lookup = AsyncMock(return_value=record)
+    monkeypatch.setattr(gateway, "telnyx_call", lookup)
+    confirm = lambda s, sid: asyncio.run(gather.confirm_telnyx_call(s, {"CallSid": [sid]}))
+    s = {"header": H}
+    assert confirm(s, "v3:real") and s["verified_call"] == "v3:real"
+    assert confirm(s, "v3:real") and lookup.await_count == 1               # pinned: asked Telnyx once
+    with pytest.raises(HTTPException):
+        confirm(s, "v3:other")                                              # another call can't reuse the address
+    for wrong in ({**record, "account_sid": "someone-else"}, {**record, "to": "+16015550199"}, {**record, "from": "+15005550006"}):
+        lookup.return_value = wrong
+        with pytest.raises(HTTPException):
+            confirm({"header": H}, "v3:real")
+    with pytest.raises(HTTPException):
+        asyncio.run(gather.confirm_telnyx_call({"header": H}, {}))         # no call id at all
+    missing = httpx.Response(404, request=httpx.Request("GET", "https://api.telnyx.com/x"))
+    lookup.side_effect = httpx.HTTPStatusError("not found", request=missing.request, response=missing)
+    with pytest.raises(HTTPException):
+        confirm({"header": H}, "v3:unknown")
+    lookup.side_effect = httpx.ConnectTimeout("slow")
+    assert confirm({"header": H}, "v3:real") is False                       # can't check now: ask again

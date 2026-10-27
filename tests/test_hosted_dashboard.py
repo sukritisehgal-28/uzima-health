@@ -54,3 +54,17 @@ def test_hosted_api_passes_the_visitor_number_only_with_a_new_search():
         assert seen == [("transfers", "k"), ("transfers/abcdef1234/accept", None), ("transfers", None)]
     finally:
         clients.clear()
+
+
+def test_calls_back_to_the_demo_number_hear_a_short_message(monkeypatch):
+    from services.public.app import main as gateway
+    from services.sync_twilio.app.main import app as voice
+    reply = TestClient(voice).post("/inbound")
+    assert reply.status_code == 200 and "only places calls" in reply.text and reply.text.endswith("<Hangup/></Response>")
+    seen = []
+    real = httpx.AsyncClient
+    def handler(request):
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, text=reply.text, headers={"content-type": "text/xml"})
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    assert TestClient(app).post("/inbound").text == reply.text and seen == [("POST", "/inbound")]

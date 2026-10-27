@@ -58,7 +58,8 @@ def handoff_status(transfer_id: str):
 async def status_callback(token: str, kind: str, request: Request):
     body = await request.body()
     params = callback_params(request, body)
-    validate_signature(request, params, body)
+    if not validate_signature(request, params, body):
+        raise HTTPException(403, "Unsigned doctor-call callback")   # live doctor calls need signed callbacks
     state = handoffs.get(token)
     if not state or kind not in {"conference", "accepting", "sending"}:
         raise HTTPException(404)
@@ -122,7 +123,8 @@ async def ready(token: str, request: Request):
     from services.sync_twilio.app.main import _twilio, _twiml_url
     body = await request.body()
     params = callback_params(request, body)
-    validate_signature(request, params, body)
+    if not validate_signature(request, params, body):
+        raise HTTPException(403, "Unsigned doctor-call callback")   # live doctor calls need signed callbacks
     state = handoffs.get(token)
     if not state:
         raise HTTPException(404)

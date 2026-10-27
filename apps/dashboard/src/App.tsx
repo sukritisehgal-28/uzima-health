@@ -48,6 +48,8 @@ export default function App() {
   const [liveCalls, setLiveCalls] = useState(false);   // real phone calls only when the Twilio gateway is live
   const [visitorCalls, setVisitorCalls] = useState(false);   // public demo: a visitor can answer the first hospital call
   const [phone, setPhone] = useState("");
+  const [askCall, setAskCall] = useState(false);       // the "take the first call yourself" popup
+  const [callerId, setCallerId] = useState<string>();
   const [callNote, setCallNote] = useState<string>();
   const [doctorPopup, setDoctorPopup] = useState(true);
   const tidRef = useRef<string>();
@@ -70,14 +72,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    const saved = new URLSearchParams(window.location.search).get("transfer");
-    if (!saved) return;
-    getStatus(saved).then((s) => {
-      if (!s.transfer_id) return;
-      tidRef.current = saved; setTid(saved); setStartedAt(Date.now() - s.elapsed_s * 1000);
-      if (s.case?.specialty) setSpecialty(s.case.specialty);
-      restoreStatus(s);
-    }).catch(() => setError("That transfer is no longer available. Start a new search."));
+    // Every visit and every refresh starts a fresh dashboard. Older links carried ?transfer=…; drop it.
+    if (new URLSearchParams(window.location.search).has("transfer")) window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
   useEffect(() => {
@@ -86,7 +82,7 @@ export default function App() {
       setNames(Object.fromEntries(d.centers.map((c: any) => [c.id, c.short_name ?? c.name])));
       setWindows(Object.fromEntries(Object.entries(d.demo_cases).map(([k, v]: [string, any]) => [k, d.windows[v.window]])));
     }).catch(() => setError("The demo backend is unavailable. Please try again shortly."));
-    getHealth().then((h) => { setLiveCalls(h?.integrations?.twilio === "live"); setVisitorCalls(!!h?.visitor_calls); }).catch(() => {});
+    getHealth().then((h) => { setLiveCalls(h?.integrations?.twilio === "live"); setVisitorCalls(!!h?.visitor_calls); setCallerId(h?.demo_caller_id ?? undefined); }).catch(() => {});
   }, []);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, []);
 
@@ -123,20 +119,20 @@ export default function App() {
     return () => { live = false; };
   }, [twin]);
 
-  async function onStart() {
+  async function onStart(withPhone?: string) {
+    setAskCall(false);
     if (starting) return;
     setStarting(true);
     setError(undefined); setBridgeMode(undefined); setBridgeStatus(undefined); setTwin(undefined); setRec(undefined); setStoppedAt(undefined);
     setCallNote(undefined); setDoctorPopup(true);
     try {
-      const r = await startTransfer(specialty, windowMin, visitorCalls ? phone.trim() || undefined : undefined);   // untouched slider = the case default window
+      const r = await startTransfer(specialty, windowMin, withPhone?.trim() || undefined);   // untouched slider = the case default window
       if (r.visitor_call_problem) setCallNote({
         limit: "Today's demo calls are used up, so every hospital is simulated this time.",
         unavailable: "Live demo calls are limited to approved numbers right now, so every hospital is simulated this time.",
         invalid: "That doesn't look like a US phone number, so every hospital is simulated this time.",
       }[r.visitor_call_problem]);
       tidRef.current = r.transfer_id; setTid(r.transfer_id); setStartedAt(Date.now());
-      window.history.replaceState(null, "", `?transfer=${encodeURIComponent(r.transfer_id)}`);
       setCards(Object.fromEntries(r.agents.map((a) => [a.agent_id, { ...a, live: a.live && liveCalls, status: "calling" }])));   // no LIVE tag in a simulated run
     } catch { setError("Could not start the search. Check that the services are running."); }
     finally { setStarting(false); }
@@ -197,19 +193,14 @@ export default function App() {
               onChange={(e) => setWindowMin(Number(e.target.value))} className="w-28 accent-[#F0C06A]" />
             <b className="tabular font-medium text-ink-text">{windowMin ?? windows[specialty]?.transport_budget_min ?? 60} min</b>
           </label>
-          {visitorCalls && (
-            <label className="flex items-center" title="Optional. We call this number once and you play the first hospital's transfer desk. US numbers only; the number is not stored.">
-              <span className="sr-only">Your phone number for the first hospital call (optional)</span>
-              <input type="tel" inputMode="tel" autoComplete="tel" value={phone} disabled={searching} maxLength={20}
-                onChange={(e) => setPhone(e.target.value)} placeholder="Your phone: answer the first call"
-                className="w-[15.5rem] rounded-full border border-ink-line bg-ink-panel px-3.5 py-1.5 text-sm text-ink-text shadow-xs outline-none placeholder:text-ink-muted focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-60" />
-            </label>
-          )}
-          <button onClick={onStart} disabled={searching || starting} className="btn-primary">
+          <button onClick={() => (visitorCalls ? setAskCall(true) : onStart())} disabled={searching || starting} className="btn-primary">
             {starting ? "Starting…" : searching ? "Searching…" : twin ? "New search" : "Find a bed"}
           </button>
         </div>
       </header>
+
+      {askCall && <CallMePopup callerId={callerId} phone={phone} setPhone={setPhone}
+        onCall={() => onStart(phone)} onSkip={() => onStart()} onCancel={() => setAskCall(false)} />}
 
       {/* Map */}
       <section className="relative min-h-[380px]">
@@ -338,6 +329,57 @@ export default function App() {
   );
 }
 
+/** "+16623002188" -> "+1 (662) 300-2188" */
+function prettyPhone(e164?: string) {
+  const m = e164?.match(/^\+1(\d{3})(\d{3})(\d{4})$/);
+  return m ? `+1 (${m[1]}) ${m[2]}-${m[3]}` : e164 ?? "our demo number";
+}
+
+/** Before a search in the public demo: the visitor can play the first hospital's transfer desk on a real call. */
+function CallMePopup({ callerId, phone, setPhone, onCall, onSkip, onCancel }: {
+  callerId?: string; phone: string; setPhone: (v: string) => void; onCall: () => void; onSkip: () => void; onCancel: () => void }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onCancel]);
+  const ready = phone.replace(/\D/g, "").length >= 10;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-text/30 px-4" onClick={onCancel}>
+      <section role="dialog" aria-modal="true" aria-labelledby="callme-title" onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[30rem] rounded-2xl border border-ink-line bg-ink-panel p-5 shadow-lg">
+        <div className="flex items-start gap-3">
+          <h2 id="callme-title" className="text-lg font-semibold tracking-[-0.01em]">Take the first call yourself</h2>
+          <button onClick={onCancel} aria-label="Close" className="-mr-1 ml-auto rounded px-1.5 text-xl leading-none text-ink-muted hover:text-ink-text">×</button>
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+          Uzima is about to call every capable hospital at once. In this demo the first hospital's call comes to <b className="font-medium text-ink-text">your phone</b>: you play its transfer desk, the way a real hospital gets the call. No app, no login, just the phone. The other hospitals are simulated.
+        </p>
+        <ol className="mt-3 space-y-1.5 text-sm text-ink-text">
+          <li><span className="text-ink-muted">1.</span> Your phone rings from <b className="font-medium">{prettyPhone(callerId)}</b>.</li>
+          <li><span className="text-ink-muted">2.</span> The AI agent says it's an AI, describes the patient and asks if you have a bed. Say <b>yes</b> or <b>no</b>.</li>
+          <li><span className="text-ink-muted">3.</span> If yes, say how many minutes until you're ready, for example <b>"ten"</b>.</li>
+          <li><span className="text-ink-muted">4.</span> It reads your answer back. Say <b>yes</b> to confirm, and it thanks you and hangs up.</li>
+        </ol>
+        <label className="mt-4 block text-sm font-medium" htmlFor="callme-phone">Your phone number (US)</label>
+        <input id="callme-phone" type="tel" inputMode="tel" autoComplete="tel" autoFocus value={phone} maxLength={20}
+          onChange={(e) => setPhone(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && ready) onCall(); }}
+          placeholder="(555) 123-4567"
+          className="mt-1.5 w-full rounded-lg border border-ink-line bg-ink-bg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold" />
+        <div className="mt-2.5 flex gap-2 rounded-lg border border-ink-line bg-ink-bg px-3 py-2 text-xs leading-relaxed text-ink-muted">
+          <svg aria-hidden viewBox="0 0 16 16" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-text"><path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2M3.5 7h9v6.5h-9z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
+          <p><b className="font-semibold text-ink-text">We don't save your number.</b> It's used only to place this one demo call, kept in memory while the call runs, and never stored or shown anywhere. Our phone carrier keeps its usual call record.</p>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button onClick={onCall} disabled={!ready} className="btn-primary">Call me and start</button>
+          <button onClick={onSkip} className="rounded-full border border-ink-line px-3.5 py-1.5 text-sm font-medium text-ink-text hover:bg-ink-bg">Start without a call</button>
+          <button onClick={onCancel} className="ml-auto text-sm text-ink-muted hover:text-ink-text">Cancel</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 /** A floating card over the map. */
 function Popup({ title, tone, tag, onClose, children }: { title: string; tone?: "yes" | "no"; tag?: string; onClose?: () => void; children: React.ReactNode }) {
   return (
@@ -364,7 +406,7 @@ function VisitorCall({ card }: { card: Card }) {
     return <Popup title="You said no" tag="Confirmed by phone"><p>{card.hospital}: {card.decline_reason ?? "no bed"}. The other hospitals are still answering.</p></Popup>;
   if (s === "callback_requested")
     return <Popup title="You asked for a call back" tag="Live call"><p>{card.hospital} is counted as pending.</p></Popup>;
-  return <Popup title="You said yes" tone="yes" tag="Confirmed by phone"><p>{card.hospital} can take the patient, ready in {card.ready_in_min ?? "?"} min. Stay on the line: press Connect doctors and the agent wraps up your call.</p></Popup>;
+  return <Popup title="You said yes" tone="yes" tag="Confirmed by phone"><p>{card.hospital} can take the patient, ready in {card.ready_in_min ?? "?"} min. The agent thanked you and ended the call. Press Connect doctors to see the doctor calls.</p></Popup>;
 }
 
 /** The doctor-to-doctor call after Connect: the accepting doctor hears the summary first, then the referring doctor joins. */
