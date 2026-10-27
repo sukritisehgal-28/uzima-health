@@ -90,7 +90,9 @@ For an offline rehearsal, set `TWILIO_ENABLED=0` and `SIM_A1_ANSWER=available`. 
 
 A passing preflight doesn't prove phone audio works; rehearse with two people as described in [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md).
 
-On a call, plain rules handle the common replies (yes or no, minutes and ranges, "hold on", "can you repeat that", "who is this", "call you back", silence). With `LLM_PROVIDER=anthropic`, Claude Haiku interprets only what the rules can't; the read-back is still confirmed by an explicit yes, never by a model.
+On a call, plain rules handle the common replies (yes or no, minutes and ranges, "hold on", "can you repeat that", "who is this", "call you back", silence). With `LLM_PROVIDER=anthropic`, Claude Haiku interprets only what the rules can't. The read-back is confirmed by any plain yes ("yes", "yeah, that's right", "Yes. Yes."); Claude judges only replies the rules can't place, and a no, a condition or a different number never confirms. When Telnyx's running transcript already holds a whole, clear answer, the agent replies about 1.5 seconds sooner instead of waiting for the end-of-speech timer.
+
+`VOICE_PROVIDER=telnyx_agent` (what the hosted demo uses) runs the whole conversation on Telnyx's real-time voice agent instead: it listens while it talks, so the desk can interrupt, and Claude Haiku starts replying within about a second of the desk finishing. The server stays the referee. The agent reports the answer through a tool with the desk's words of agreement, which must pass the same checks; when the call ends, the desk's own words in Telnyx's transcript are checked again, an answer they never agreed to is withdrawn, and the conversation is then deleted from Telnyx. If the agent can't start, the call goes out turn-based. A call costs about $0.06 a minute on Telnyx.
 
 For a public demo, `VISITOR_CALLS=1` lets a visitor type their own US number so the first hospital call rings their phone; every other hospital is simulated, calls are capped per day, and the number is never shown or stored as entered. `DOCTOR_CALLS=simulated` keeps the two doctor calls on the dashboard instead of dialing.
 

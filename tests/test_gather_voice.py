@@ -104,9 +104,19 @@ def test_silence_is_no_answer_and_forged_callback_is_rejected(voice):
     assert results(tid)[0]["status"] == "no_answer"
 
 
-@pytest.mark.parametrize("speech", ["yes but no bed", "maybe", "yes in thirty instead", "", "not correct"])
+@pytest.mark.parametrize("speech", ["yes but no bed", "maybe", "yes in thirty instead", "", "not correct",
+                                    "Yes. No.", "Yes, but in thirty minutes.", "Yes. Maybe.", "yes fifty minutes", "no problem, wait"])
 def test_qualified_answers_are_not_confirmation(speech):
     assert not gather.confirmation(speech)
+
+
+@pytest.mark.parametrize("speech", ["Yes.", "Yes. Yes.", "yes yes", "Yes, yes, yes.", "Yes, that's correct.",
+                                    "Yes. That is correct.", "Correct.", "1", "yeah", "Yep, that's right.",
+                                    "Absolutely.", "Sure.", "Okay, sounds good.", "Uh huh.", "You got it.",
+                                    "Yes, fifteen minutes.", "yeah 15", "That's right, thank you."])
+def test_every_way_of_agreeing_confirms(speech):
+    # Repeating it ("Yes. Yes.") or saying it casually is still agreement with the read-back of 15 minutes.
+    assert gather.confirmation(speech, ready=15)
 
 
 def test_public_gateway_does_not_expose_dial_or_transfer_endpoints():
@@ -161,21 +171,21 @@ def test_what_people_say_besides_an_answer(speech, intent):
 def test_hold_repeat_and_who_is_calling_then_answer(voice):
     tid, _, post, _ = voice
     held = post(0, "hold on").text
-    assert "Sure, I will wait" in held and '<Pause length="10"/>' in held and "Say yes or no" in held
+    assert "Sure, I will wait" in held and '<Pause length="10"/>' in held and "say yes or no" in held
     assert "Of course." in post(1, "sorry, can you repeat that?").text
     who = post(2, "who is this?").text
-    assert "AI assistant" in who and "South Sunflower" in who and "Say yes or no" in who
+    assert "AI assistant" in who and "South Sunflower" in who and "say yes or no" in who
     assert "How many minutes" in post(3, "yeah we have a bed").text
     assert "ready in 15 minutes" in post(4, "10 to 15 minutes").text
 
 
-def test_readback_needs_an_explicit_yes(voice):
+def test_readback_needs_agreement(voice):
     tid, _, post, _ = voice
     post(0, "yes")
     post(1, "ten")
-    assert "Just to confirm, please say yes" in post(2, "yeah").text
+    assert "Just to confirm, please say yes" in post(2, "the cath lab is on the third floor").text
     assert not results(tid)
-    assert "stay on the line" in post(3, "yes").text
+    assert "stay on the line" in post(3, "yeah").text
     assert results(tid)[0]["ready_in_min"] == 10
 
 
@@ -183,8 +193,8 @@ def test_unclear_readback_never_records_an_answer(voice):
     tid, _, post, _ = voice
     post(0, "yes")
     post(1, "ten")
-    post(2, "yeah")
-    post(3, "sure")
+    post(2, "hmm")
+    post(3, "the cath lab is upstairs")
     assert "Hangup" in post(4, "I think so").text
     assert results(tid)[0]["status"] == "no_answer"
 
@@ -224,7 +234,7 @@ def test_unsigned_telnyx_answers_are_used_only_after_telnyx_confirms_the_call(vo
                                     {"account_sid": "acct", "from": "+16623002188", "to": phone}])
     monkeypatch.setattr(gateway, "telnyx_call", lookup)
     again = post(0, "yes").text                                  # Telnyx unreachable: same question, nothing used
-    assert "Say yes or no" in again and "How many minutes" not in again
+    assert "say yes or no" in again and "How many minutes" not in again
     assert "How many minutes" in post(0, "yes").text             # confirmed on the retry, then pinned
     assert "ready in 10 minutes" in post(1, "ten").text and lookup.await_count == 2
 
@@ -261,9 +271,23 @@ def test_repeating_the_read_back_number_is_not_a_correction(voice):
     tid, _, post, _ = voice
     post(0, "yes")
     post(1, "ten minutes")
-    assert "Just to confirm, please say yes" in post(2, "yes ten minutes").text
-    assert "stay on the line" in post(3, "yes").text and results(tid)[0]["ready_in_min"] == 10
+    assert "stay on the line" in post(2, "yes ten minutes").text and results(tid)[0]["ready_in_min"] == 10
     assert gather.correction("twenty", 10) and gather.correction("no", 10) and not gather.correction("ten", 10)
+
+
+def test_claude_decides_only_replies_the_rules_cannot_place(voice, monkeypatch):
+    tid, _, post, _ = voice
+    judge = AsyncMock(return_value=True)
+    monkeypatch.setattr(gather, "agrees", judge)
+    post(0, "yes")
+    post(1, "ten")
+    assert "correct that" in post(2, "no, twenty").text         # a correction never reaches Claude
+    judge.assert_not_called()
+    post(3, "yes")
+    post(4, "twenty")
+    assert "stay on the line" in post(5, "spot on, that works for us").text
+    judge.assert_awaited_once()
+    assert results(tid)[0]["ready_in_min"] == 20
 
 
 def test_with_simulated_doctor_calls_a_confirmed_yes_thanks_and_hangs_up(voice, monkeypatch):
@@ -309,3 +333,45 @@ def test_second_unclear_answer_is_explained_in_plain_words(voice):
     assert "Sorry, I did not get a clear answer" in post(0, "the usual").text
     second = post(1, "the usual").text
     assert "still did not get a clear answer" in second and "Let me put it simply" in second and "press 1 for yes" in second
+
+
+@pytest.mark.parametrize("stage,speech,ready,settled", [
+    ("availability", "Yes.", None, True), ("availability", "no we don't", None, True),
+    ("availability", "yes but", None, False), ("availability", "hold on", None, False),
+    ("ready", "fifteen minutes", None, True), ("ready", "about 20 minutes", None, True),
+    ("ready", "twenty", None, False), ("ready", "twenty five", None, False),
+    ("confirm", "Yes. Yes.", 15, True), ("confirm", "yes but", 15, False), ("confirm", "yes twenty minutes", 15, False),
+])
+def test_only_a_whole_clear_partial_answer_is_taken_early(stage, speech, ready, settled):
+    assert gather.settled_answer({"stage": stage, "ready": ready}, speech) is settled
+
+
+def test_a_clear_partial_answer_gets_the_next_question_without_waiting(voice, monkeypatch):
+    tid, token, post, send = voice
+    monkeypatch.setattr(gather, "SETTLE_S", 0)
+    tc = TestClient(gateway.app)
+
+    def partial(turn, text):
+        path = f"/voice/{token}/{turn}/partial"
+        params = {"UnstableSpeechResult": text, "CallSid": "CA-demo"}
+        data = f"https://voice.example.test{path}" + "".join(k + params[k] for k in sorted(params))
+        sig = base64.b64encode(hmac.new(b"test-secret", data.encode(), hashlib.sha1).digest()).decode()
+        return tc.post(path, data=params, headers={"X-Twilio-Signature": sig})
+
+    assert partial(0, "yes but").status_code == 204 and gather.sessions[token]["turn"] == 0   # not a whole answer
+    assert partial(0, "Yes.").status_code == 204
+    update = send.call_args.args
+    assert update[0] == "Calls/CA-demo.json" and "How many minutes" in gateway.twiml_docs[update[1]["Url"].rsplit("/", 1)[-1]]
+    assert "How many minutes" in post(0, "Yes.").text            # the full result, arriving later, gets the same reply
+    partial(1, "ten minutes")
+    partial(2, "Yes.")
+    assert results(tid)[0]["status"] == "available" and results(tid)[0]["ready_in_min"] == 10
+
+
+def test_a_partial_with_a_bad_signature_changes_nothing(voice, monkeypatch):
+    tid, token, post, send = voice
+    monkeypatch.setattr(gather, "SETTLE_S", 0)
+    calls = send.await_count
+    r = TestClient(gateway.app).post(f"/voice/{token}/0/partial", data={"UnstableSpeechResult": "Yes.", "CallSid": "CA-demo"},
+                                     headers={"X-Twilio-Signature": "invalid"})
+    assert r.status_code == 204 and gather.sessions[token]["turn"] == 0 and send.await_count == calls

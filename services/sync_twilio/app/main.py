@@ -18,11 +18,12 @@ from pydantic import BaseModel
 from services.shared import config
 from services.shared.clients import client
 from services.shared.schemas import AgentHeader, AgentResult, CallEvent, Status, TranscriptLine
-from services.sync_twilio.app import gather, doctor_handoff
+from services.sync_twilio.app import ai_agent, gather, doctor_handoff
 
 app = FastAPI(title="Project Uzima Twilio gateway")
 app.include_router(gather.router)
 app.include_router(doctor_handoff.router)
+app.include_router(ai_agent.router)
 log = logging.getLogger("sync_twilio")
 outbox: list[dict] = []   # what was sent (or would have been, in mock mode), for the demo and tests
 # (transfer_id, agent_id) -> {"header": dict, "transfer_id": str, "case_brief": str, "call_sid": str|None}
@@ -142,9 +143,18 @@ async def inbound(request: Request):
     test_speech = config.env("INBOUND_TEST_SPEECH")
     if test_speech:
         # Speech self-test only: the demo number calls itself and this side answers like a hospital desk.
-        log.warning("Inbound self-test call answered")
-        lines = f'<Say>{escape(test_speech)}</Say><Pause length="5"/>' * 15
-        return Response(f'<Response><Pause length="3"/>{lines}<Hangup/></Response>', media_type="text/xml")
+        # Lines split by "|" are said one at a time, each once the agent has finished its next question.
+        lines, step = test_speech.split("|"), int(request.query_params.get("step", "0") or 0)
+        log.warning("Inbound self-test call, step %s", step)
+        if len(lines) == 1:
+            lines = f'<Say>{escape(test_speech)}</Say><Pause length="5"/>' * 15
+            return Response(f'<Response><Pause length="3"/>{lines}<Hangup/></Response>', media_type="text/xml")
+        if step > len(lines):
+            return Response('<Response><Pause length="8"/><Hangup/></Response>', media_type="text/xml")
+        say = f"<Say>{escape(lines[step - 1])}</Say>" if step else ""
+        listen = (f'<Gather input="speech" action="https://{config.env("PUBLIC_HOST")}/inbound?step={step + 1}" '
+                  f'method="POST" actionOnEmptyResult="true" timeout="20" {gather.TELNYX_SPEECH}></Gather>')
+        return Response(gather.voiced(f"<Response>{say}{listen}</Response>"), media_type="text/xml")
     if request.query_params.get("fallback"):
         # Telnyx calls this when a live demo call's instructions fail mid-call.
         log.warning("Demo call fell back to the apology (account %s)", account[:64] or "unknown")
@@ -175,6 +185,16 @@ async def call(req: CallRequest):
              f'<Parameter name="agent_id" value="{escape(req.header["agent_id"])}"/>'
              f'</Stream></Connect></Response>')
     provider = config.env("VOICE_PROVIDER", "bedrock_gather")
+    if provider == "telnyx_agent":
+        # Telnyx's real-time agent; if it can't start, the same call goes out turn-based instead.
+        if config.phone_provider() == "telnyx":
+            try:
+                sid = await ai_agent.start(AgentHeader(**req.header), req.transfer_id)
+                live_calls[(req.transfer_id, agent_id)]["call_sid"] = sid
+                return {"mode": "live", "sid": sid, "voice": "agent"}
+            except (httpx.HTTPError, KeyError, ValueError) as exc:
+                log.warning("Voice agent unavailable (%s); placing a turn-based call", type(exc).__name__)
+        provider = "bedrock_gather"
     if provider == "bedrock_gather":
         h = AgentHeader(**req.header)
         twiml = await gather.start(h, req.transfer_id, req.case_brief or default_brief(h))
